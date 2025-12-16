@@ -14,7 +14,7 @@ def carregar_dados():
     """Carrega os dados do arquivo"""
     # Use a função que corrigimos anteriormente ou carregue localmente
     # Aqui vou usar uma versão simplificada para o protótipo
-    github_url = "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/clinac_fac_tmr.txt"
+    github_url = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/clinac_fac_tmr.txt"
     
     try:
         response = requests.get(github_url)
