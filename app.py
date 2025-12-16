@@ -8,10 +8,10 @@ st.set_page_config(page_title="Calculadora de Unidade Monitora", layout="wide")
 
 # Configuração dos aceleradores disponíveis no GitHub
 ACELERADORES = {
-    "Clinac 6MV": "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/clinac_6mv.txt",
-    "Clinac 10MV": "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/clinac_10mv.txt",
-    "Clinac 15MV": "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/clinac_15mv.txt",
-    "TrueBeam 6FFF": "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/truebeam_6fff.txt",
+    "Clinac 6MV": "https://raw.githubusercontent.com/cuccuerj/dosimetria/main/clinac_fac_tmr.txt",
+    #"Clinac 10MV": "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/clinac_10mv.txt",
+    #"Clinac 15MV": "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/clinac_15mv.txt",
+    #"TrueBeam 6FFF": "https://raw.githubusercontent.com/seu-usuario/dosimetria/main/dados/truebeam_6fff.txt",
 }
 
 def carregar_acelerador(url):
