@@ -6,22 +6,27 @@ from io import StringIO
 import math
 import numpy as np
 
-st.sidebar.title("Navegação")
+st.sidebar.title(" ")
 selected_page = st.sidebar.radio(
-    'Ir Para',
-    ['Página Principal', 'Análise de Dados', 'Sobre']
+    'Selecione o Acelerador Linear',
+    ['CL2100', 'UNIQUE']
 )
 
-st.sidebar.header("Filtros")
-department = st.sidebar.selectbox(
-    'Selecione o departamento',
-    ['Vendas', 'Marketing', 'Engenharia']
-)
+if page =="CL2100":
+    st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100"
+elif page =="UNIQUE":
+    st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100"
 
-data_range = st.sidebar.date_input('Selecione o intervalo de datas')
+# st.sidebar.header("Filtros")
+# department = st.sidebar.selectbox(
+#     'Selecione o departamento',
+#     ['Vendas', 'Marketing', 'Engenharia']
+# )
 
-st.title(f'Página: {selected_page}')
-st.write(f'Departamento: {department}')
+# data_range = st.sidebar.date_input('Selecione o intervalo de datas')
+
+# st.title(f'Página: {selected_page}')
+# st.write(f'Departamento: {department}')
 
     
 # st.set_page_config(page_title="Calculadora de Unidade Monitora", layout="wide")
