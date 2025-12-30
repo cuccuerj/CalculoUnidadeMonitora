@@ -15,7 +15,7 @@ selected_page = st.sidebar.selectbox(
 if selected_page =="CL2100":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100")
     cl_fac_tmr = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/clinac_fac_tmr.txt"
-    df = pd.read_csv('/content/clinac_fac_tmr.txt',sep="\t",header = None)
+    df = pd.read_csv(cl_fac_tmr,sep="\t",header = None)
 
     tam_campo = df.iloc[0,1:].astype(float).tolist()    
     sc = pd.Series(df.iloc[1,1:].astype(float).values,index = tam_campo,name = "Sc")
