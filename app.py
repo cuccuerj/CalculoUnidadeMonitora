@@ -7,7 +7,7 @@ import math
 import numpy as np
 
 st.sidebar.title("Cálculo de Unidade Monitora")
-selected_page = st.sidebar.radio(
+selected_page = st.sidebar.selectbox(
     'Selecione o Acelerador Linear',
     ['CL2100', 'UNIQUE']
 )
