@@ -12,9 +12,9 @@ selected_page = st.sidebar.radio(
     ['CL2100', 'UNIQUE']
 )
 
-if page =="CL2100":
+if selected_page =="CL2100":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100")
-elif page =="UNIQUE":
+elif selected_page =="UNIQUE":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear UNIQUE")
 
 # st.sidebar.header("Filtros")
