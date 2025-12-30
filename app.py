@@ -5,14 +5,25 @@ import requests
 from io import StringIO
 import math
 import numpy as np
-st.title("Cálculo de Unidade Monitora (UM)")
-pagina_principal = st.Page("Cálculo de Unidade Monitora (UM)", title = "Cálculo de Unidade Monitora (UM)")
-pagina_cl2100 = st.Page("Cálculo de Unidade Monitora para o CL2100", title = "Cálculo de Unidade Monitora para o CL2100")
-pagina_unique = st.Page("Cálculo de Unidade Monitora para o Unique", title = "Cálculo de Unidade Monitora para o Unique")
 
-pg = st.navigation([pagina_principal,pagina_cl2100,pagina_unique])
+st.sidebar.title("Navegação")
+selected_page = st.sidebar.radio(
+    'Ir Para',
+    ['Página Principal', 'Análise de Dados', 'Sobre']
+)
 
+st.sidebar.header("Filtros")
+department = st.sidebar.selectbox(
+    'Selecione o departamento',
+    ['Vendas', 'Marketing', 'Engenharia']
+)
 
+data_range = st.sidebar.date_input("Selecione o intervalo de datas')
+
+st.title(f'Página: {selected_page}')
+st.write(f'Departamento: {department}')
+
+    
 # st.set_page_config(page_title="Calculadora de Unidade Monitora", layout="wide")
 # st.title("🏥 Calculadora de Unidade Monitora (MU)")
 # st.markdown("---")
