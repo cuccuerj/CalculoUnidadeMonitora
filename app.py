@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 from io import StringIO
 import math
+import numpy as np
 st.title("Cálculo de Unidade Monitora (UM)")
 st.header("Cabeçalho")
 st.subheader("Subcabeçalho")
