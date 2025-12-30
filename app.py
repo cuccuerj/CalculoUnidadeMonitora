@@ -7,7 +7,7 @@ import math
 st.title("Cálculo de Unidade Monitora (UM)")
 st.header("Cabeçalho")
 st.subheader("Subcabeçalho")
-linac = st.selectbox("ACELERADOR LINEAR DO PLANO,['UNIQUE','CL2100'])
+linac = st.selectbox("ACELERADOR LINEAR DO PLANO",['UNIQUE','CL2100'])
 
 dataframe = pd.DataFrame(
     np.random.randn(10,20),
