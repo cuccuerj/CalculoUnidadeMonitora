@@ -6,7 +6,7 @@ from io import StringIO
 import math
 import numpy as np
 
-st.sidebar.title(" ")
+st.sidebar.title("Cálculo de Unidade Monitora")
 selected_page = st.sidebar.radio(
     'Selecione o Acelerador Linear',
     ['CL2100', 'UNIQUE']
