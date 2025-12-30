@@ -39,7 +39,7 @@ if selected_page =="CL2100":
 
 elif selected_page =="UNIQUE":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear UNIQUE")
-    def extrair_info_pdf()
+    extrair_info_pdf()
 
 # st.sidebar.header("Filtros")
 # department = st.sidebar.selectbox(
