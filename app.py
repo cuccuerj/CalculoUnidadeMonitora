@@ -18,7 +18,7 @@ department = st.sidebar.selectbox(
     ['Vendas', 'Marketing', 'Engenharia']
 )
 
-data_range = st.sidebar.date_input("Selecione o intervalo de datas')
+data_range = st.sidebar.date_input('Selecione o intervalo de datas')
 
 st.title(f'Página: {selected_page}')
 st.write(f'Departamento: {department}')
