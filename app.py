@@ -24,7 +24,7 @@ def extrair_info_pdf():
 
 if selected_page =="CL2100":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100")
-    def extrair_info_pdf()
+    extrair_info_pdf()
     
     cl_fac_tmr = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/clinac_fac_tmr.txt"
     df = pd.read_csv(cl_fac_tmr,sep="\t",header = None)
