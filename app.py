@@ -5,6 +5,7 @@ import requests
 from io import StringIO
 import math
 import numpy as np
+import fitz
 
 st.sidebar.title("Cálculo de Unidade Monitora")
 selected_page = st.sidebar.selectbox(
@@ -12,25 +13,33 @@ selected_page = st.sidebar.selectbox(
     ['CL2100', 'UNIQUE']
 )
 
+def extrair_info_pdf():
+    pdf_plano = st.file_uploader("Importe o PDF do Plano", type =["pdf"])
+    if pdf_plano is not None:
+        with fitz.open(stream = pdf_plano.read(), filetype = "pdf") as doc:
+            text = ""
+            for page in doc:
+                text += page.get_text()
+
+
 if selected_page =="CL2100":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100")
+    def extrair_info_pdf()
+    
     cl_fac_tmr = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/clinac_fac_tmr.txt"
     df = pd.read_csv(cl_fac_tmr,sep="\t",header = None)
-
     tam_campo = df.iloc[0,1:].astype(float).tolist()    
     sc = pd.Series(df.iloc[1,1:].astype(float).values,index = tam_campo,name = "Sc")
     sp = pd.Series(df.iloc[2,1:].astype(float).values,index = tam_campo,name = "Sp")
     tmr_raw = df.iloc[4:].reset_index(drop = True)
     tmr_raw.columns = ["Profundidade"]+tam_campo
-    #define os nomes das colunas do DataFrame, primeira coluna com nome Profundidade, as demais colunas com os valores da lista tam_campo
     tmr_raw["Profundidade"] = tmr_raw["Profundidade"].astype(float)
     tmr = tmr_raw.set_index("Profundidade")
     
-    st.write(f'Sc 10: {sc[10]}')
-
 
 elif selected_page =="UNIQUE":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear UNIQUE")
+    def extrair_info_pdf()
 
 # st.sidebar.header("Filtros")
 # department = st.sidebar.selectbox(
