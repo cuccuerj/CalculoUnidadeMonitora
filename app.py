@@ -6,16 +6,13 @@ from io import StringIO
 import math
 import numpy as np
 st.title("Cálculo de Unidade Monitora (UM)")
-st.header("Cabeçalho")
-st.subheader("Subcabeçalho")
-linac = st.selectbox("ACELERADOR LINEAR DO PLANO",['UNIQUE','CL2100'])
+pagina_principal = st.Page("Cálculo de Unidade Monitora (UM)", title = "Cálculo de Unidade Monitora (UM)")
+pagina_cl2100 = st.Page("Cálculo de Unidade Monitora para o CL2100", title = "Cálculo de Unidade Monitora para o CL2100")
+pagina_unique = st.Page("Cálculo de Unidade Monitora para o Unique", title = "Cálculo de Unidade Monitora para o Unique")
 
-dataframe = pd.DataFrame(
-    np.random.randn(10,20),
-    columns=('col %d' % i for i in range(20)))
-st.table(dataframe)
+pg = st.navigation([pagina_principal,pagina_cl2100,pagina_unique])
 
-                     
+
 # st.set_page_config(page_title="Calculadora de Unidade Monitora", layout="wide")
 # st.title("🏥 Calculadora de Unidade Monitora (MU)")
 # st.markdown("---")
