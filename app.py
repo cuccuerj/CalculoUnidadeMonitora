@@ -13,9 +13,9 @@ selected_page = st.sidebar.radio(
 )
 
 if page =="CL2100":
-    st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100"
+    st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100")
 elif page =="UNIQUE":
-    st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100"
+    st.title("Cálculo de Unidade Monitora para o Acelerador Linear UNIQUE")
 
 # st.sidebar.header("Filtros")
 # department = st.sidebar.selectbox(
