@@ -14,6 +14,21 @@ selected_page = st.sidebar.selectbox(
 
 if selected_page =="CL2100":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear CL2100")
+    cl_fac_tmr = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/clinac_fac_tmr.txt"
+    df = pd.read_csv('/content/clinac_fac_tmr.txt',sep="\t",header = None)
+
+    tam_campo = df.iloc[0,1:].astype(float).tolist()    
+    sc = pd.Series(df.iloc[1,1:].astype(float).values,index = tam_campo,name = "Sc")
+    sp = pd.Series(df.iloc[2,1:].astype(float).values,index = tam_campo,name = "Sp")
+    tmr_raw = df.iloc[4:].reset_index(drop = True)
+    tmr_raw.columns = ["Profundidade"]+tam_campo
+    #define os nomes das colunas do DataFrame, primeira coluna com nome Profundidade, as demais colunas com os valores da lista tam_campo
+    tmr_raw["Profundidade"] = tmr_raw["Profundidade"].astype(float)
+    tmr = tmr_raw.set_index("Profundidade")
+    
+    st.write(f'Sc 10: {sc[10]}')
+
+
 elif selected_page =="UNIQUE":
     st.title("Cálculo de Unidade Monitora para o Acelerador Linear UNIQUE")
 
