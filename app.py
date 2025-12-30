@@ -5,7 +5,7 @@ import requests
 from io import StringIO
 import math
 st.title("Cálculo de Unidade Monitora (UM)")
-st.header("Cabeçalho)
+st.header("Cabeçalho")
 st.subheadear("Subcabeçalho")
 # st.set_page_config(page_title="Calculadora de Unidade Monitora", layout="wide")
 # st.title("🏥 Calculadora de Unidade Monitora (MU)")
