@@ -7,8 +7,14 @@ import math
 st.title("Cálculo de Unidade Monitora (UM)")
 st.header("Cabeçalho")
 st.subheader("Subcabeçalho")
-linac = st.selectbox("UNIQUE ou CL2100",['UNIQUE','CL2100'])
+linac = st.selectbox("ACELERADOR LINEAR DO PLANO,['UNIQUE','CL2100'])
 
+dataframe = pd.DataFrame(
+    np.random.randn(10,20),
+    columns=('col %d' % i for i in range(20)))
+st.table(dataframe)
+
+                     
 # st.set_page_config(page_title="Calculadora de Unidade Monitora", layout="wide")
 # st.title("🏥 Calculadora de Unidade Monitora (MU)")
 # st.markdown("---")
