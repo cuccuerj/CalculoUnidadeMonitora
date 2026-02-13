@@ -22,7 +22,7 @@ def extrair_info_pdf():
             for page in doc:
                 text += page.get_text()
             padrao = r"(?<=Energia)(.*?)(?=Tamanho do Campo Aberto X)"
-            resultado = re.search(padrao, texto, re.DOTALL)
+            resultado = re.search(padrao, text, re.DOTALL)
             if resultado:
               dados = resultado.group(1).strip()
               valores = re.findall(r"\s(\d+X)", dados)
