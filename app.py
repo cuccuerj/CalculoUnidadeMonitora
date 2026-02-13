@@ -26,7 +26,7 @@ def extrair_info_pdf():
             if resultado:
               dados = resultado.group(1).strip()
               valores = re.findall(r"\s(\d+X)", dados)
-              print(valores)
+              st.write("Valores", valores)
 
 
 if selected_page =="CL2100":
