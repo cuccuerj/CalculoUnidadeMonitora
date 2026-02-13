@@ -6,6 +6,7 @@ from io import StringIO
 import math
 import numpy as np
 import fitz
+import re
 
 st.sidebar.title("Cálculo de Unidade Monitora")
 selected_page = st.sidebar.selectbox(
