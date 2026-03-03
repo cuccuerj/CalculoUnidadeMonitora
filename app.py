@@ -205,7 +205,7 @@ if not df_paciente.empty:
             # 1. Cálculos de EqSq e ISQF usando o dmax automático
             eqsq_c = calcular_eqsq(row['X'], row['Y'])
             eqsq_f = calcular_eqsq(row['Fsx (cm)'], row['Fsy (cm)'])
-            isqf = calcular_fator_distancia(row['SSD'], dmax=dmax_auto)
+            isqf = calcular_fator_distancia(row['SSD'], row['Prof.'] dmax=dmax_auto)
             
             # 2. Interpolações
             sc_val = np.interp(eqsq_c, campos_maq, sc_maq)
