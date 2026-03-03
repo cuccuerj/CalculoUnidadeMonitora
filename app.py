@@ -19,16 +19,16 @@ def extrair_dados_rt(pdf_file):
     for c in campos_encontrados:
         dados_campos[c] = {
             "Campo": f"Campo {c}", 
-            "X (cm)": 0.0, 
-            "Y (cm)": 0.0, 
+            "X": 0.0, 
+            "Y": 0.0, 
             "Fsx (cm)": 0.0, 
             "Fsy (cm)": 0.0, 
             "FILTRO": "-", 
             "UM": 0.0, 
-            "DOSE (cGy)": 0.0, 
-            "SSD (cm)": 0.0, 
-            "Prof. (cm)": 0.0, 
-            "Prof. Ef. (cm)": 0.0
+            "DOSE": 0.0, 
+            "SSD": 0.0, 
+            "Prof.": 0.0, 
+            "Prof. Ef.": 0.0
         }
 
     # Função auxiliar para buscar valores numéricos básicos na tabela inicial do PDF
@@ -106,7 +106,7 @@ metodo_entrada = st.radio(
 )
 
 # Colunas na ordem que você pediu, mais as novas do Campo Efetivo
-colunas_padrao = ["Campo", "X", "Y", "Fsx (cm)", "Fsy (cm)", "FILTRO", "UM", "DOSE", "SSD", "Prof.", "Prof. Ef."]
+colunas_padrao = ["Campo", "X (cm)", "Y (cm)", "X COL (cm)", "Y COL (cm)", "FILTRO", "UM", "DOSE (cGy)", "SSD (cm)", "Prof. (cm)", "Prof. Ef. (cm)"]
 df_paciente = pd.DataFrame(columns=colunas_padrao)
 
 if metodo_entrada == "Extrair de PDF do Planejamento":
