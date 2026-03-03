@@ -131,8 +131,8 @@ fonte_dados_maquina = st.radio(
 conteudo_maquina = None
 
 if fonte_dados_maquina == "Usar dados padrão (GitHub)":
-    url_github = "COLOQUE_AQUI_O_LINK_RAW_DO_SEU_GITHUB" 
-    st.info("A usar a base de dados padrão da clínica alojada no GitHub.")
+    url_github = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/refs/heads/main/clinac_fac_tmr.txt" 
+    st.info("A usar a base de dados padrão da clínica")
     try:
         # Se o utilizador não tiver mudado a URL ainda, não tentamos descarregar
         if url_github.startswith("http"):
