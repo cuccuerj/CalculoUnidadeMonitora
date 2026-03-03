@@ -14,11 +14,11 @@ def calcular_eqsq(x, y):
         return 0.0
     return (4 * x * y) / (2 * (x + y))
 
-def calcular_fator_distancia(ssd, dmax=DMAX, sad=SAD):
-    """Calcula o ISQF: ((SSD + dmax) / SAD)^2"""
+def calcular_fator_distancia(ssd,prof, dmax=DMAX, sad=SAD):
+    """Calcula o ISQF: ((SAD + dmax) / (ssd + prof))^2"""
     if ssd <= 0:
         return 0.0
-    return ((ssd + dmax) / sad) ** 2
+    return ((SAD + dmax) / (ssd + prof)) ** 2
 
 def extrair_dados_rt(pdf_file):
     dados_campos = {}
@@ -158,7 +158,7 @@ if not df_paciente.empty:
         # Aplica as fórmulas que você solicitou
         df_calculos['EqSq Colimador (Sc)'] = df_calculos.apply(lambda row: calcular_eqsq(row['X'], row['Y']), axis=1).round(2)
         df_calculos['EqSq Fantoma (Sp/TMR)'] = df_calculos.apply(lambda row: calcular_eqsq(row['Fsx (cm)'], row['Fsy (cm)']), axis=1).round(2)
-        df_calculos['Fator Distância (ISQF)'] = df_calculos.apply(lambda row: calcular_fator_distancia(row['SSD']), axis=1).round(4)
+        df_calculos['Fator Distância (ISQF)'] = df_calculos.apply(lambda row: calcular_fator_distancia(row['SSD']),row['Prof.']), axis=1).round(4)
         
         # Mostra apenas as colunas que importam para os próximos passos
         colunas_mostrar = ['Plano', 'Campo', 'EqSq Colimador (Sc)', 'EqSq Fantoma (Sp/TMR)', 'Prof. Ef.', 'Fator Distância (ISQF)', 'DOSE']
