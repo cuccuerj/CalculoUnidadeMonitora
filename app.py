@@ -6,7 +6,7 @@ from pathlib import Path
 # ── Carregar dados dosimétricos do arquivo ─────────────────────────────────────
 
 @st.cache_data
-def carregar_dados(caminho="dados/clinac_fac_tmr.txt"):
+def carregar_dados(caminho="clinac_fac_tmr.txt"):
     """
     Lê o arquivo de dados dosimétricos no formato TSV:
       Linha 1 : cabeçalho de campos (3, 3.5, ... 40)
@@ -80,7 +80,7 @@ st.set_page_config(
 st.title("☢️ Cálculo Manual de Unidades Monitor")
 
 # Carrega dados (cacheado — relê só quando o arquivo mudar)
-campos, sc_vals, sp_vals, profundidades, tmr_data = carregar_dados("dados/clinac_6mv.txt")
+campos, sc_vals, sp_vals, profundidades, tmr_data = carregar_dados("clinac_fac_tmr.txt")
 
 st.caption(
     f"Dados: `dados/clinac_6mv.txt` · "
@@ -170,7 +170,7 @@ with st.expander("ℹ️ Sobre este calculador"):
     st.markdown(f"""
     **Fórmula:** `UM = Dose (cGy) / (DR × Sc × Sp × TMR)`
 
-    **Arquivo de dados:** `dados/clinac_6mv.txt`  
+    **Arquivo de dados:** `clinac_fac_tmr.txt`  
     **Campos disponíveis:** {campos[0]} – {campos[-1]} cm (passo 0,5 cm)  
     **Profundidades disponíveis:** {profundidades[0]} – {profundidades[-1]} cm  
     **Normalização TMR:** dmax = 1,4 cm (TMR = 1,000)  
