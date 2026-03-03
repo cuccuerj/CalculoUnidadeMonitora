@@ -150,20 +150,20 @@ def carregar_tabelas_maquina(conteudo_texto):
     return np.array(campos), np.array(sc), np.array(sp), prof_array, tmr_array, dmax_auto
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GERAÇÃO DE PDF (TABELA GIRADA / TRANSPOSTA EM PAISAGEM)
+# GERAÇÃO DE PDF (OTIMIZADO PARA CABER NUMA ÚNICA FOLHA A4)
 # ══════════════════════════════════════════════════════════════════════════════
 def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, logo_bytes=None, instituicao=""):
     buffer = io.BytesIO()
-    # Usa modo Paisagem (landscape) para caber todas as informações confortavelmente
-    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=2*cm)
+    # Margens reduzidas para maximizar o espaço útil
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=1.2*cm, rightMargin=1.2*cm, topMargin=1.2*cm, bottomMargin=1.2*cm)
 
     styles = getSampleStyleSheet()
     VERDE = colors.HexColor("#00c896")
     AZUL = colors.HexColor("#005088")
     
-    s_tit  = ParagraphStyle("tit", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=3, textColor=AZUL)
-    s_sub  = ParagraphStyle("sub", parent=styles["Normal"], fontSize=10, alignment=TA_CENTER, spaceAfter=15, textColor=colors.gray)
-    s_sec  = ParagraphStyle("sec", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=6, textColor=AZUL)
+    s_tit  = ParagraphStyle("tit", parent=styles["Normal"], fontSize=14, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=2, textColor=AZUL)
+    s_sub  = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9, alignment=TA_CENTER, spaceAfter=8, textColor=colors.gray)
+    s_sec  = ParagraphStyle("sec", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", spaceBefore=8, spaceAfter=4, textColor=AZUL)
     
     story = []
 
@@ -171,17 +171,17 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     if logo_bytes:
         try:
             story.append(RLImage(io.BytesIO(logo_bytes), width=4*cm, height=1.6*cm, kind='proportional'))
-            story.append(Spacer(1, 10))
+            story.append(Spacer(1, 4))
         except: pass
     
     if instituicao:
-        story.append(Paragraph(instituicao, ParagraphStyle("inst", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=5)))
+        story.append(Paragraph(instituicao, ParagraphStyle("inst", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=4)))
 
     story.append(Paragraph("Verificação Independente de Unidades Monitor", s_tit))
     story.append(Paragraph("Relatório Paramétrico Completo", s_sub))
     story.append(HRFlowable(width="100%", thickness=1.5, color=VERDE))
 
-    # Dados do Paciente
+    # Dados do Paciente (Otimizado verticalmente)
     story.append(Paragraph("Identificação", s_sec))
     t_pac = Table([
         ["Paciente:", nome_paciente or "N/A", "Prontuário:", id_paciente or "N/A", "Data do Cálculo:", data_calc.strftime("%d/%m/%Y")],
@@ -192,7 +192,8 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
         ("FONTNAME", (2,0), (2,-1), "Helvetica-Bold"),
         ("FONTNAME", (4,0), (4,-1), "Helvetica-Bold"),
         ("ALIGN", (0,0), (-1,-1), "LEFT"),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING", (0,0), (-1,-1), 2),
     ]))
     story.append(t_pac)
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
@@ -201,13 +202,13 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
 
     # Mapeamento exato dos nomes solicitados
     parametros = [
-        ("Aparelho", lambda r: r["Aparelho"]),
-        ("Energia (MV)", lambda r: r["Energia"]),
+        ("Aparelho", lambda r: str(r["Aparelho"])),
+        ("Energia (MV)", lambda r: str(r["Energia"])),
         ("Tamanho do Campo x (cm)", lambda r: f"{r['X']:.1f}"),
         ("Tamanho do Campo y (cm)", lambda r: f"{r['Y']:.1f}"),
         ("Campo Equivalente (cm)", lambda r: f"{r['EqSq Colimador']:.2f}"),
         ("Campo Colimado (cm)", lambda r: f"{r['EqSq Fantoma']:.2f}"),
-        ("Distância Fonte Superficie (cm)", lambda r: f"{r['SSD']:.1f}"),
+        ("Distância Fonte Superfície (cm)", lambda r: f"{r['SSD']:.1f}"),
         ("Distância Fonte Isocentro (cm)", lambda r: f"{SAD:.1f}"),
         ("Dose (cGy)", lambda r: f"{r['DOSE (cGy)']:.1f}"),
         ("Profundidade (cm)", lambda r: f"{r['Prof.']:.2f}"),
@@ -221,22 +222,22 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
         ("Fator Distância", lambda r: f"{r['ISQF']:.4f}"),
         ("UM Calculada Manualmente", lambda r: f"{r['UM Calculada']:.1f}"),
         ("UM Calculada pelo Eclipse", lambda r: f"{r['UM (Eclipse)']:.0f}"),
-        ("Concordancia calculo/Eclipse(%)", lambda r: f"{r['Desvio_num']:+.2f}%")
+        ("Concordância cálculo/Eclipse (%)", lambda r: f"{r['Desvio_num']:+.2f}%")
     ]
 
     # Construindo as linhas da tabela
-    header = ["Parâmetro"] + [r["Campo"] for _, r in df_res.iterrows()]
+    header = ["Parâmetro"] + [str(r["Campo"]) for _, r in df_res.iterrows()]
     data = [header]
     
     for nome_param, func in parametros:
         linha = [nome_param] + [func(row) for _, row in df_res.iterrows()]
         data.append(linha)
 
-    # Larguras adaptativas: 1ª coluna maior, o resto dividido pelo espaço disponível
-    largura_total_util = 26.7 * cm
-    largura_param = 7.0 * cm
-    num_campos = len(df_res)
-    largura_campo = max(2.5 * cm, (largura_total_util - largura_param) / num_campos)
+    # Cálculo da largura adaptativa precisa
+    largura_total_util = 27.3 * cm # A4 Landscape 29.7cm - 2.4cm (Margens)
+    largura_param = 6.5 * cm
+    num_campos = max(1, len(df_res))
+    largura_campo = (largura_total_util - largura_param) / num_campos
     
     t_res = Table(data, colWidths=[largura_param] + [largura_campo]*num_campos, repeatRows=1)
     
@@ -245,12 +246,13 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
-        ("ALIGN", (0,0), (0,-1), "LEFT"), # Coluna de parâmetros alinhada à esquerda
-        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"), # Coluna de parâmetros em negrito
+        ("ALIGN", (0,0), (0,-1), "LEFT"), # Coluna de parâmetros à esquerda
+        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"), # Parâmetros em negrito
         ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-        ("FONTSIZE", (0,0), (-1,-1), 8),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
-        ("TOPPADDING", (0,0), (-1,-1), 4)
+        ("FONTSIZE", (0,0), (-1,-1), 7.5), # Tamanho de letra compactado
+        ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+        ("TOPPADDING", (0,0), (-1,-1), 3)
     ]
     
     # Linhas zebradas para facilitar a leitura
@@ -271,12 +273,12 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     t_res.setStyle(TableStyle(estilo_tabela))
     story.append(t_res)
 
-    # Assinaturas no final
-    story.append(Spacer(1, 20))
+    # Assinaturas no final (Otimizado)
+    story.append(Spacer(1, 12))
     t_ass = Table([
         ["___________________________________", "", "___________________________________"],
         ["Físico Médico Responsável", "", "Data da Revisão"]
-    ], colWidths=[7.5*cm, 5*cm, 7.5*cm])
+    ], colWidths=[7.0*cm, 5*cm, 7.0*cm])
     t_ass.setStyle(TableStyle([
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
         ("FONTSIZE", (0,0), (-1,-1), 9),
