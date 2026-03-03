@@ -19,7 +19,7 @@ def calcular_eqsq(x, y):
 def calcular_fator_distancia(ssd, prof, dmax=DMAX, sad=SAD):
     if ssd <= 0:
         return 0.0
-    return ((ssd + dmax) / (ssd + prof)) ** 2
+    return ((sad + dmax) / (ssd + prof)) ** 2
 
 def extrair_dados_rt(pdf_file):
     dados_campos = {}
