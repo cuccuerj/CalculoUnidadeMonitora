@@ -5,3 +5,4 @@ PyMuPDF
 streamlit>=1.32.0
 numpy>=1.26.0
 reportlab>=4.0.0
+pypdf>=4.0.0
