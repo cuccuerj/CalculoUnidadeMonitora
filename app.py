@@ -177,12 +177,14 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     if instituicao:
         story.append(Paragraph(instituicao, ParagraphStyle("inst", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=4)))
 
-    story.append(Paragraph("Verificação da Unidade Monitora", s_tit))
-    #story.append(Paragraph("Relatório Paramétrico Completo", s_sub))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=AZUL))
+    story.append(Paragraph("Verificação Independente de Unidades Monitor", s_tit))
+    # Inclusão dos dados fixos logo após o título principal para ganhar espaço na tabela
+    info_fixa = f"Relatório Paramétrico Completo &nbsp;&nbsp;|&nbsp;&nbsp; Fator de Calibração: {dose_ref:.3f} cGy/UM &nbsp;&nbsp;|&nbsp;&nbsp; SAD: {SAD:.1f} cm"
+    story.append(Paragraph(info_fixa, s_sub))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=VERDE))
 
     # Dados do Paciente (Otimizado verticalmente)
-    #story.append(Paragraph("Identificação", s_sec))
+    story.append(Paragraph("Identificação", s_sec))
     t_pac = Table([
         ["Paciente:", nome_paciente or "N/A", "Prontuário:", id_paciente or "N/A", "Data do Cálculo:", data_calc.strftime("%d/%m/%Y")],
         ["Plano:", nome_plano or "N/A", "", "", "", ""]
@@ -198,9 +200,9 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     story.append(t_pac)
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
 
-    #story.append(Paragraph("Tabela Dosimétrica (Transposta)", s_sec))
+    story.append(Paragraph("Tabela Dosimétrica (Transposta)", s_sec))
 
-    # Mapeamento exato dos nomes solicitados
+    # Mapeamento exato dos nomes solicitados (SAD e Calibração removidos daqui para ganhar espaço)
     parametros = [
         ("Aparelho", lambda r: str(r["Aparelho"])),
         ("Energia (MV)", lambda r: str(r["Energia"])),
@@ -209,12 +211,10 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
         ("Campo Equivalente (cm)", lambda r: f"{r['EqSq Colimador']:.2f}"),
         ("Campo Colimado (cm)", lambda r: f"{r['EqSq Fantoma']:.2f}"),
         ("Distância Fonte Superfície (cm)", lambda r: f"{r['SSD']:.1f}"),
-        ("Distância Fonte Isocentro (cm)", lambda r: f"{SAD:.1f}"),
         ("Dose (cGy)", lambda r: f"{r['DOSE (cGy)']:.1f}"),
         ("Profundidade (cm)", lambda r: f"{r['Prof.']:.2f}"),
         ("Profundidade Efetiva (cm)", lambda r: f"{r['Prof. Ef.']:.2f}"),
         ("TPR/TMR", lambda r: f"{r['TMR']:.4f}"),
-        ("Fator de Calibração (UM/cGy)", lambda r: f"{dose_ref:.3f}"),
         ("Sc", lambda r: f"{r['Sc']:.4f}"),
         ("Sp", lambda r: f"{r['Sp']:.4f}"),
         ("Fator Filtro Dinâmico", lambda r: f"{r['Fator Filtro']:.3f}"),
