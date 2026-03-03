@@ -15,10 +15,10 @@ def calcular_eqsq(x, y):
         return 0.0
     return (4 * x * y) / (2 * (x + y))
 
-def calcular_fator_distancia(ssd, dmax, sad=SAD):
+def calcular_fator_distancia(ssd, prof, dmax, sad=SAD):
     if ssd <= 0:
         return 0.0
-    return ((ssd + dmax) / sad) ** 2
+    return ((sad + dmax) / (prof+ssd)) ** 2
 
 def extrair_dados_rt(pdf_file):
     dados_campos = {}
@@ -149,7 +149,7 @@ with st.expander("1. Dados da Máquina (Fatores e TMR)", expanded=False):
 
     conteudo_maquina = None
     if fonte_dados_maquina == "Usar dados padrão (GitHub)":
-        url_github = "COLOQUE_AQUI_O_LINK_RAW_DO_SEU_GITHUB" 
+        url_github = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/refs/heads/main/clinac_fac_tmr.txt" 
         st.info("A usar a base de dados padrão da clínica alojada no GitHub.")
         try:
             if url_github.startswith("http"):
