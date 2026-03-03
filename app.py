@@ -6,7 +6,7 @@ from pathlib import Path
 # ── Carregar dados dosimétricos do arquivo ─────────────────────────────────────
 
 @st.cache_data
-def carregar_dados(caminho="dados/clinac_6mv.txt"):
+def carregar_dados(caminho="dados/clinac_fac_tmr.txt"):
     """
     Lê o arquivo de dados dosimétricos no formato TSV:
       Linha 1 : cabeçalho de campos (3, 3.5, ... 40)
