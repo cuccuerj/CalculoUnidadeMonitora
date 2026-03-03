@@ -177,9 +177,9 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     if instituicao:
         story.append(Paragraph(instituicao, ParagraphStyle("inst", parent=styles["Normal"], fontSize=10, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=4)))
 
-    story.append(Paragraph("Verificação Independente de Unidades Monitor", s_tit))
-    story.append(Paragraph("Relatório Paramétrico Completo", s_sub))
-    story.append(HRFlowable(width="100%", thickness=1.5, color=VERDE))
+    story.append(Paragraph("Verificação da Unidade Monitora", s_tit))
+    #story.append(Paragraph("Relatório Paramétrico Completo", s_sub))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=AZUL))
 
     # Dados do Paciente (Otimizado verticalmente)
     story.append(Paragraph("Identificação", s_sec))
@@ -198,7 +198,7 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     story.append(t_pac)
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
 
-    story.append(Paragraph("Tabela Dosimétrica (Transposta)", s_sec))
+    #story.append(Paragraph("Tabela Dosimétrica (Transposta)", s_sec))
 
     # Mapeamento exato dos nomes solicitados
     parametros = [
