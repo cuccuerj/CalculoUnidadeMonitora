@@ -7,7 +7,7 @@ import urllib.request
 from scipy.interpolate import RegularGridInterpolator
 
 # --- CONFIGURAÇÕES FÍSICAS PADRÃO ---
-DMAX = 1.5 # Profundidade de dose máxima para 6X
+DMAX = 1.4 # Profundidade de dose máxima para 6X
 SAD = 100.0 # Distância Fonte-Eixo padrão
 
 # --- FUNÇÕES DE APOIO MATEMÁTICO ---
@@ -16,10 +16,10 @@ def calcular_eqsq(x, y):
         return 0.0
     return (4 * x * y) / (2 * (x + y))
 
-def calcular_fator_distancia(ssd, dmax=DMAX, sad=SAD):
+def calcular_fator_distancia(ssd, prof, dmax=DMAX, sad=SAD):
     if ssd <= 0:
         return 0.0
-    return ((ssd + dmax) / sad) ** 2
+    return ((ssd + dmax) / (ssd + prof)) ** 2
 
 def extrair_dados_rt(pdf_file):
     dados_campos = {}
@@ -195,7 +195,7 @@ if not df_paciente.empty:
             # 1. Cálculos de EqSq e ISQF
             eqsq_c = calcular_eqsq(row['X'], row['Y'])
             eqsq_f = calcular_eqsq(row['Fsx (cm)'], row['Fsy (cm)'])
-            isqf = calcular_fator_distancia(row['SSD'], dmax=dmax_user)
+            isqf = calcular_fator_distancia(row['SSD'], row['Prof.'], dmax=dmax_user)
             
             # 2. Interpolações
             sc_val = np.interp(eqsq_c, campos_maq, sc_maq)
