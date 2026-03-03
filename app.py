@@ -182,7 +182,7 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     story.append(HRFlowable(width="100%", thickness=1.5, color=AZUL))
 
     # Dados do Paciente (Otimizado verticalmente)
-    story.append(Paragraph("Identificação", s_sec))
+    #story.append(Paragraph("Identificação", s_sec))
     t_pac = Table([
         ["Paciente:", nome_paciente or "N/A", "Prontuário:", id_paciente or "N/A", "Data do Cálculo:", data_calc.strftime("%d/%m/%Y")],
         ["Plano:", nome_plano or "N/A", "", "", "", ""]
