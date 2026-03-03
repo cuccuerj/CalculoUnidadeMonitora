@@ -22,7 +22,7 @@ caminho_arquivo_maquina = None
 if fonte_dados_maquina == "Usar dados padrão (GitHub)":
     # ATENÇÃO: Você precisa colocar o link RAW do seu arquivo no GitHub aqui.
     # Exemplo: "https://raw.githubusercontent.com/seu-usuario/seu-repositorio/main/clinac_fac_tmr.txt"
-    url_github = "COLOQUE_AQUI_O_LINK_RAW_DO_SEU_GITHUB" 
+    url_github = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/refs/heads/main/clinac_fac_tmr.txt" 
     
     st.info("Usando o banco de dados padrão da clínica hospedado no GitHub.")
     caminho_arquivo_maquina = url_github
