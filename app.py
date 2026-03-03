@@ -8,7 +8,7 @@ import base64
 import io
 from datetime import date
 from scipy.interpolate import RegularGridInterpolator
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib import colors
 from reportlab.lib.units import cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -27,7 +27,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Estilo mínimo apenas para alinhar componentes nativos
 st.markdown("""
 <style>
     .block-container { padding-top: 2rem; padding-bottom: 2rem; }
@@ -41,10 +40,8 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════════════════════
 SAD = 100.0
 
-if "nome_paciente" not in st.session_state:
-    st.session_state["nome_paciente"] = ""
-if "id_paciente" not in st.session_state:
-    st.session_state["id_paciente"] = ""
+if "nome_paciente" not in st.session_state: st.session_state["nome_paciente"] = ""
+if "id_paciente" not in st.session_state: st.session_state["id_paciente"] = ""
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FUNÇÕES DE CÁLCULO E EXTRAÇÃO
@@ -64,7 +61,7 @@ def extrair_dados_rt(pdf_file):
         for page in pdf.pages:
             texto_completo += (page.extract_text() or "") + "\n"
 
-    # Extração automática dos dados do Paciente
+    # Extração de Paciente e Plano
     match_nome = re.search(r"Nome do Paciente:\s*(.+)", texto_completo, re.IGNORECASE)
     nome_pac = match_nome.group(1).strip() if match_nome else ""
 
@@ -74,13 +71,21 @@ def extrair_dados_rt(pdf_file):
     match_plano = re.search(r"(?:Plano|Plan):\s*(.+)", texto_completo, re.IGNORECASE)
     nome_plano = match_plano.group(1).strip() if match_plano else pdf_file.name
 
+    # Extração de Aparelho e Energia
+    aparelho = "Clinac"
+    energia = "6X"
+    match_machine = re.search(r"Treatment unit:\s*([^,]+),\s*energy:\s*(.+)", texto_completo, re.IGNORECASE)
+    if match_machine:
+        aparelho = match_machine.group(1).strip()
+        energia = match_machine.group(2).strip()
+
     campos_encontrados = sorted(list(set(re.findall(r'Campo (\d+)', texto_completo))))
 
     for c in campos_encontrados:
         dados_campos[c] = {
-            "Plano": nome_plano, "Campo": f"Campo {c}",
+            "Plano": nome_plano, "Campo": f"Campo {c}", "Aparelho": aparelho, "Energia": energia,
             "X": 0.0, "Y": 0.0, "Fsx (cm)": 0.0, "Fsy (cm)": 0.0,
-            "FILTRO": "Nenhum", "UM (Eclipse)": 0.0, "DOSE (cGy)": 0.0,
+            "FILTRO": "Nenhum", "OAR": 1.000, "UM (Eclipse)": 0.0, "DOSE (cGy)": 0.0,
             "SSD": 0.0, "Prof.": 0.0, "Prof. Ef.": 0.0,
         }
 
@@ -110,8 +115,7 @@ def extrair_dados_rt(pdf_file):
             dados_campos[c]["Fsx (cm)"] = float(matches_fs[i][0]) / 10.0
             dados_campos[c]["Fsy (cm)"] = float(matches_fs[i][1] or matches_fs[i][0]) / 10.0
 
-    df = pd.DataFrame(dados_campos.values())
-    return {"df": df, "nome": nome_pac, "id": id_pac}
+    return {"df": pd.DataFrame(dados_campos.values()), "nome": nome_pac, "id": id_pac}
 
 @st.cache_data
 def carregar_tabelas_maquina(conteudo_texto):
@@ -120,15 +124,12 @@ def carregar_tabelas_maquina(conteudo_texto):
 
     for linha in linhas:
         partes = linha.strip().split('\t')
-        if len(partes) < 2:
-            partes = linha.strip().split()
-        if not partes or len(partes) < 2:
-            continue
+        if len(partes) < 2: partes = linha.strip().split()
+        if not partes or len(partes) < 2: continue
+            
         rotulo = partes[0].strip().lower()
-        try:
-            valores = [float(v.replace(',', '.')) for v in partes[1:] if v.strip()]
-        except ValueError:
-            continue
+        try: valores = [float(v.replace(',', '.')) for v in partes[1:] if v.strip()]
+        except ValueError: continue
             
         if rotulo == 'campo':   campos = valores
         elif rotulo == 'sc':    sc = valores
@@ -137,8 +138,7 @@ def carregar_tabelas_maquina(conteudo_texto):
             try:
                 profundidades.append(float(rotulo.replace(',', '.')))
                 tmr_matriz.append(valores)
-            except ValueError:
-                pass
+            except ValueError: pass
 
     tmr_array  = np.array(tmr_matriz)
     prof_array = np.array(profundidades)
@@ -150,11 +150,12 @@ def carregar_tabelas_maquina(conteudo_texto):
     return np.array(campos), np.array(sc), np.array(sp), prof_array, tmr_array, dmax_auto
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GERAÇÃO DE PDF
+# GERAÇÃO DE PDF (TABELA GIRADA / TRANSPOSTA EM PAISAGEM)
 # ══════════════════════════════════════════════════════════════════════════════
-def gerar_pdf(df_res, nome_paciente, id_paciente, nome_plano, data_calc, logo_bytes=None, instituicao=""):
+def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, logo_bytes=None, instituicao=""):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=2*cm, rightMargin=2*cm, topMargin=2*cm, bottomMargin=2.5*cm)
+    # Usa modo Paisagem (landscape) para caber todas as informações confortavelmente
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=1.5*cm, rightMargin=1.5*cm, topMargin=1.5*cm, bottomMargin=2*cm)
 
     styles = getSampleStyleSheet()
     VERDE = colors.HexColor("#00c896")
@@ -162,7 +163,7 @@ def gerar_pdf(df_res, nome_paciente, id_paciente, nome_plano, data_calc, logo_by
     
     s_tit  = ParagraphStyle("tit", parent=styles["Normal"], fontSize=16, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=3, textColor=AZUL)
     s_sub  = ParagraphStyle("sub", parent=styles["Normal"], fontSize=10, alignment=TA_CENTER, spaceAfter=15, textColor=colors.gray)
-    s_sec  = ParagraphStyle("sec", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", spaceBefore=15, spaceAfter=6, textColor=AZUL)
+    s_sec  = ParagraphStyle("sec", parent=styles["Normal"], fontSize=12, fontName="Helvetica-Bold", spaceBefore=10, spaceAfter=6, textColor=AZUL)
     
     story = []
 
@@ -177,71 +178,105 @@ def gerar_pdf(df_res, nome_paciente, id_paciente, nome_plano, data_calc, logo_by
         story.append(Paragraph(instituicao, ParagraphStyle("inst", parent=styles["Normal"], fontSize=11, fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=5)))
 
     story.append(Paragraph("Verificação Independente de Unidades Monitor", s_tit))
-    story.append(Paragraph("Radioterapia • Clinac 6 MV • SAD = 100 cm", s_sub))
+    story.append(Paragraph("Relatório Paramétrico Completo", s_sub))
     story.append(HRFlowable(width="100%", thickness=1.5, color=VERDE))
 
     # Dados do Paciente
-    story.append(Paragraph("Identificação do Paciente", s_sec))
+    story.append(Paragraph("Identificação", s_sec))
     t_pac = Table([
-        ["Paciente:", nome_paciente or "N/A", "Prontuário:", id_paciente or "N/A"],
-        ["Plano:", nome_plano or "N/A", "Data do Cálculo:", data_calc.strftime("%d/%m/%Y")]
-    ], colWidths=[2.5*cm, 7.5*cm, 3*cm, 4*cm])
+        ["Paciente:", nome_paciente or "N/A", "Prontuário:", id_paciente or "N/A", "Data do Cálculo:", data_calc.strftime("%d/%m/%Y")],
+        ["Plano:", nome_plano or "N/A", "", "", "", ""]
+    ], colWidths=[2.2*cm, 9*cm, 2.2*cm, 5*cm, 3.2*cm, 4*cm])
     t_pac.setStyle(TableStyle([
         ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"),
         ("FONTNAME", (2,0), (2,-1), "Helvetica-Bold"),
+        ("FONTNAME", (4,0), (4,-1), "Helvetica-Bold"),
         ("ALIGN", (0,0), (-1,-1), "LEFT"),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
     ]))
     story.append(t_pac)
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
 
-    # Tabela de Resultados
-    story.append(Paragraph("Resultados Dosimétricos", s_sec))
-    header = [["Campo", "Dose\n(cGy)", "Sc", "Sp", "TMR", "ISQF", "F.Filtro", "UM\nCalc.", "UM\nEcl.", "Desvio"]]
-    rows = []
-    for _, r in df_res.iterrows():
-        d = r.get("Desvio (%)", 0)
-        rows.append([
-            str(r.get("Campo", "")), f"{r.get('DOSE (cGy)', 0):.1f}",
-            f"{r.get('Sc', 0):.4f}", f"{r.get('Sp', 0):.4f}", f"{r.get('TMR', 0):.4f}",
-            f"{r.get('ISQF', 0):.4f}", f"{r.get('Fator Filtro', 1.0):.3f}",
-            f"{r.get('UM Calculada', 0):.1f}", f"{r.get('UM (Eclipse)', 0):.0f}", f"{d:+.1f}%"
-        ])
+    story.append(Paragraph("Tabela Dosimétrica (Transposta)", s_sec))
 
-    cw = [2.5*cm, 1.6*cm, 1.4*cm, 1.4*cm, 1.4*cm, 1.4*cm, 1.6*cm, 1.8*cm, 1.8*cm, 1.8*cm]
-    t_res = Table(header + rows, colWidths=cw, repeatRows=1)
+    # Mapeamento exato dos nomes solicitados
+    parametros = [
+        ("Aparelho", lambda r: r["Aparelho"]),
+        ("Energia (MV)", lambda r: r["Energia"]),
+        ("Tamanho do Campo x (cm)", lambda r: f"{r['X']:.1f}"),
+        ("Tamanho do Campo y (cm)", lambda r: f"{r['Y']:.1f}"),
+        ("Campo Equivalente (cm)", lambda r: f"{r['EqSq Colimador']:.2f}"),
+        ("Campo Colimado (cm)", lambda r: f"{r['EqSq Fantoma']:.2f}"),
+        ("Distância Fonte Superficie (cm)", lambda r: f"{r['SSD']:.1f}"),
+        ("Distância Fonte Isocentro (cm)", lambda r: f"{SAD:.1f}"),
+        ("Dose (cGy)", lambda r: f"{r['DOSE (cGy)']:.1f}"),
+        ("Profundidade (cm)", lambda r: f"{r['Prof.']:.2f}"),
+        ("Profundidade Efetiva (cm)", lambda r: f"{r['Prof. Ef.']:.2f}"),
+        ("TPR/TMR", lambda r: f"{r['TMR']:.4f}"),
+        ("Fator de Calibração (UM/cGy)", lambda r: f"{dose_ref:.3f}"),
+        ("Sc", lambda r: f"{r['Sc']:.4f}"),
+        ("Sp", lambda r: f"{r['Sp']:.4f}"),
+        ("Fator Filtro Dinâmico", lambda r: f"{r['Fator Filtro']:.3f}"),
+        ("Fator OAR", lambda r: f"{r['OAR']:.3f}"),
+        ("Fator Distância", lambda r: f"{r['ISQF']:.4f}"),
+        ("UM Calculada Manualmente", lambda r: f"{r['UM Calculada']:.1f}"),
+        ("UM Calculada pelo Eclipse", lambda r: f"{r['UM (Eclipse)']:.0f}"),
+        ("Concordancia calculo/Eclipse(%)", lambda r: f"{r['Desvio_num']:+.2f}%")
+    ]
+
+    # Construindo as linhas da tabela
+    header = ["Parâmetro"] + [r["Campo"] for _, r in df_res.iterrows()]
+    data = [header]
     
-    # Estilização da tabela de resultados
+    for nome_param, func in parametros:
+        linha = [nome_param] + [func(row) for _, row in df_res.iterrows()]
+        data.append(linha)
+
+    # Larguras adaptativas: 1ª coluna maior, o resto dividido pelo espaço disponível
+    largura_total_util = 26.7 * cm
+    largura_param = 7.0 * cm
+    num_campos = len(df_res)
+    largura_campo = max(2.5 * cm, (largura_total_util - largura_param) / num_campos)
+    
+    t_res = Table(data, colWidths=[largura_param] + [largura_campo]*num_campos, repeatRows=1)
+    
     estilo_tabela = [
-        ("BACKGROUND", (0,0), (-1,0), AZUL),
+        ("BACKGROUND", (0,0), (-1,0), AZUL), # Cabeçalho
         ("TEXTCOLOR", (0,0), (-1,0), colors.white),
         ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
+        ("ALIGN", (0,0), (0,-1), "LEFT"), # Coluna de parâmetros alinhada à esquerda
+        ("FONTNAME", (0,0), (0,-1), "Helvetica-Bold"), # Coluna de parâmetros em negrito
         ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
         ("FONTSIZE", (0,0), (-1,-1), 8),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 6),
-        ("TOPPADDING", (0,0), (-1,-1), 6)
+        ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+        ("TOPPADDING", (0,0), (-1,-1), 4)
     ]
     
-    # Coloração de desvios no PDF
-    for i, r in enumerate(df_res.itertuples(), start=1):
-        try: d = float(df_res.iloc[i-1]["Desvio (%)"])
-        except: d = 0
-        if abs(d) <= 2: estilo_tabela.append(("TEXTCOLOR", (-1, i), (-1, i), colors.green))
-        elif abs(d) <= 5: estilo_tabela.append(("TEXTCOLOR", (-1, i), (-1, i), colors.darkgoldenrod))
+    # Linhas zebradas para facilitar a leitura
+    for i in range(1, len(data)):
+        if i % 2 == 0:
+            estilo_tabela.append(("BACKGROUND", (0,i), (-1,i), colors.whitesmoke))
+
+    # Coloração da última linha (Concordância/Desvio)
+    idx_desvio = len(data) - 1
+    for col_idx, r in enumerate(df_res.itertuples(), start=1):
+        d = float(r.Desvio_num)
+        if abs(d) <= 2: estilo_tabela.append(("TEXTCOLOR", (col_idx, idx_desvio), (col_idx, idx_desvio), colors.green))
+        elif abs(d) <= 5: estilo_tabela.append(("TEXTCOLOR", (col_idx, idx_desvio), (col_idx, idx_desvio), colors.darkgoldenrod))
         else: 
-            estilo_tabela.append(("TEXTCOLOR", (-1, i), (-1, i), colors.red))
-            estilo_tabela.append(("FONTNAME", (-1, i), (-1, i), "Helvetica-Bold"))
+            estilo_tabela.append(("TEXTCOLOR", (col_idx, idx_desvio), (col_idx, idx_desvio), colors.red))
+            estilo_tabela.append(("FONTNAME", (col_idx, idx_desvio), (col_idx, idx_desvio), "Helvetica-Bold"))
             
     t_res.setStyle(TableStyle(estilo_tabela))
     story.append(t_res)
 
-    # Assinaturas
-    story.append(Spacer(1, 30))
+    # Assinaturas no final
+    story.append(Spacer(1, 20))
     t_ass = Table([
         ["___________________________________", "", "___________________________________"],
         ["Físico Médico Responsável", "", "Data da Revisão"]
-    ], colWidths=[7.5*cm, 2*cm, 7.5*cm])
+    ], colWidths=[7.5*cm, 5*cm, 7.5*cm])
     t_ass.setStyle(TableStyle([
         ("ALIGN", (0,0), (-1,-1), "CENTER"),
         ("FONTSIZE", (0,0), (-1,-1), 9),
@@ -258,15 +293,15 @@ def gerar_pdf(df_res, nome_paciente, id_paciente, nome_plano, data_calc, logo_by
 # ══════════════════════════════════════════════════════════════════════════════
 
 st.title("☢️ Verificação Independente de UM (3D)")
-st.write("Sistema limpo e rápido para conferência de Unidades Monitoras do Eclipse.")
+st.write("Sistema de conferência com Relatório Paramétrico Transposto.")
 st.divider()
 
 # --- BARRA LATERAL ---
 with st.sidebar:
     st.header("⚙️ Configurações Gerais")
-    dose_ref = st.number_input("Taxa de Dose (cGy/UM)", value=1.000, step=0.01, format="%.3f")
+    dose_ref = st.number_input("Fator de Calibração (cGy/UM)", value=1.000, step=0.01, format="%.3f")
     
-    st.subheader("Filtros / Bandejas")
+    st.subheader("Filtros Dinâmicos / Bandejas")
     df_filtros_default = pd.DataFrame([
         {"Nome do Filtro": "Nenhum", "Fator": 1.000},
         {"Nome do Filtro": "EDW", "Fator": 1.000},
@@ -283,7 +318,6 @@ with st.sidebar:
 # --- FLUXO PRINCIPAL ---
 tab1, tab2, tab3 = st.tabs(["1. Máquina (Sc, Sp, TMR)", "2. Dados do Paciente", "3. Cálculos e Relatório"])
 
-# ABA 1: MÁQUINA
 with tab1:
     st.subheader("Carregar Tabela da Máquina")
     fonte = st.radio("Selecione a fonte dos dados:", ("Usar padrão do GitHub", "Fazer upload do TXT manual"))
@@ -293,7 +327,7 @@ with tab1:
         try:
             with urllib.request.urlopen(url) as r:
                 st.session_state["conteudo_maquina"] = r.read().decode("utf-8")
-            st.success("Tabelas da máquina carregadas automaticamente com sucesso!")
+            st.success("Tabelas da máquina carregadas com sucesso!")
         except Exception:
             st.error("Erro ao conectar no GitHub. Faça o upload manual.")
     else:
@@ -304,7 +338,6 @@ with tab1:
 
 conteudo_maquina = st.session_state.get("conteudo_maquina")
 
-# ABA 2: DADOS DO PACIENTE
 with tab2:
     st.subheader("Extrair Planejamento")
     metodo = st.radio("Método:", ("Upload PDF do Eclipse", "Digitação Manual"), horizontal=True)
@@ -315,37 +348,33 @@ with tab2:
     if metodo == "Upload PDF do Eclipse":
         pdfs = st.file_uploader("Selecione o(s) relatório(s) em PDF", type=["pdf"], accept_multiple_files=True)
         if pdfs:
-            with st.spinner("Extraindo dados e lendo informações do paciente..."):
+            with st.spinner("Lendo informações do paciente..."):
                 dfs_extraidos = []
                 for p in pdfs:
                     dados = extrair_dados_rt(p)
                     dfs_extraidos.append(dados["df"])
-                    # Salva nome e ID se encontrar
                     if dados["nome"]: st.session_state["nome_paciente"] = dados["nome"]
                     if dados["id"]: st.session_state["id_paciente"] = dados["id"]
                     
                 df_paciente = pd.concat(dfs_extraidos, ignore_index=True)
                 nome_plano = df_paciente["Plano"].iloc[0] if not df_paciente.empty else ""
-                
-            st.success("Dados extraídos com sucesso!")
     else:
         df_paciente = pd.DataFrame([{
-            "Plano": "Plano Manual", "Campo": "Campo 1", "X": 10.0, "Y": 10.0,
-            "Fsx (cm)": 10.0, "Fsy (cm)": 10.0, "FILTRO": "Nenhum",
-            "UM (Eclipse)": 100.0, "DOSE (cGy)": 100.0, "SSD": 100.0, "Prof.": 5.0, "Prof. Ef.": 5.0
+            "Plano": "Manual", "Campo": "Campo 1", "Aparelho": "Clinac", "Energia": "6X",
+            "X": 10.0, "Y": 10.0, "Fsx (cm)": 10.0, "Fsy (cm)": 10.0, 
+            "FILTRO": "Nenhum", "OAR": 1.000, "UM (Eclipse)": 100.0, "DOSE (cGy)": 100.0, 
+            "SSD": 100.0, "Prof.": 5.0, "Prof. Ef.": 5.0
         }])
 
     if not df_paciente.empty:
-        # Mostra os dados do paciente capturados para conferência
         col_nome, col_id, col_data = st.columns(3)
         nome_paciente = col_nome.text_input("Nome do Paciente", value=st.session_state["nome_paciente"])
         id_paciente = col_id.text_input("ID/Prontuário", value=st.session_state["id_paciente"])
         data_calc = col_data.date_input("Data do Cálculo", value=date.today())
 
-        st.caption("Verifique e edite os parâmetros da tabela abaixo, se necessário:")
+        st.caption("Verifique e edite os parâmetros extraídos abaixo (inclusive OAR, Aparelho e Energia):")
         df_edit = st.data_editor(df_paciente, num_rows="dynamic", use_container_width=True)
 
-# ABA 3: CÁLCULOS E RESULTADOS
 with tab3:
     if not conteudo_maquina:
         st.warning("⚠️ Volte à Aba 1 e carregue os dados da máquina primeiro.")
@@ -355,9 +384,6 @@ with tab3:
         campos_m, sc_m, sp_m, prof_m, tmr_m, dmax = carregar_tabelas_maquina(conteudo_maquina)
         interp_tmr = RegularGridInterpolator((prof_m, campos_m), tmr_m, bounds_error=False, fill_value=None)
 
-        st.success(f"Cálculo processado com base no d_max = {dmax} cm")
-
-        # Processamento matemático
         resultados = []
         for _, row in df_edit.iterrows():
             eqsq_c = calcular_eqsq(row["X"], row["Y"])
@@ -367,47 +393,47 @@ with tab3:
             sp_v   = np.interp(eqsq_f, campos_m, sp_m)
             tmr_v  = float(interp_tmr((row["Prof. Ef."], eqsq_f))) if row["Prof. Ef."] > 0 and eqsq_f > 0 else 0.0
             ff     = dict_filtros.get(row["FILTRO"], 1.0)
+            oar    = row.get("OAR", 1.0)
             
-            denom  = dose_ref * sc_v * sp_v * tmr_v * isqf * ff
+            denom  = dose_ref * sc_v * sp_v * tmr_v * isqf * ff * oar
             um_c   = row["DOSE (cGy)"] / denom if denom > 0 else 0.0
             dev    = ((um_c - row["UM (Eclipse)"]) / row["UM (Eclipse)"]) * 100 if row["UM (Eclipse)"] > 0 else 0.0
             
+            # Dicionário com TODAS as informações requisitadas
             resultados.append({
-                "Campo": row["Campo"], "DOSE (cGy)": row["DOSE (cGy)"],
+                "Campo": row["Campo"],
+                "Aparelho": row["Aparelho"],
+                "Energia": row["Energia"],
+                "X": row["X"], "Y": row["Y"],
+                "EqSq Colimador": eqsq_c, "EqSq Fantoma": eqsq_f,
+                "SSD": row["SSD"], "DOSE (cGy)": row["DOSE (cGy)"],
+                "Prof.": row["Prof."], "Prof. Ef.": row["Prof. Ef."],
                 "Sc": sc_v, "Sp": sp_v, "TMR": tmr_v, "ISQF": isqf,
-                "Fator Filtro": ff, "UM Calculada": um_c, "UM (Eclipse)": row["UM (Eclipse)"],
-                "Desvio (%)": dev
+                "Fator Filtro": ff, "OAR": oar,
+                "UM Calculada": um_c, "UM (Eclipse)": row["UM (Eclipse)"],
+                "Desvio_num": dev # Guardado como número para regras de cor
             })
 
         df_res = pd.DataFrame(resultados)
 
-        # Função de formatação nativa do Pandas Styler
-        def highlight_desvio(val):
-            try:
-                if abs(val) <= 2.0: return 'color: #059669; font-weight: bold; background-color: #d1fae5;'
-                elif abs(val) <= 5.0: return 'color: #d97706; font-weight: bold; background-color: #fef3c7;'
-                else: return 'color: #dc2626; font-weight: bold; background-color: #fee2e2;'
-            except: return ''
+        st.success("Cálculo processado com sucesso! Veja a tabela detalhada abaixo e o PDF gerado.")
 
-        # Formatação das casas decimais na exibição
-        styled_df = df_res.style.format({
-            "DOSE (cGy)": "{:.1f}", "Sc": "{:.4f}", "Sp": "{:.4f}", 
-            "TMR": "{:.4f}", "ISQF": "{:.4f}", "Fator Filtro": "{:.3f}", 
-            "UM Calculada": "{:.1f}", "UM (Eclipse)": "{:.0f}", "Desvio (%)": "{:+.2f}%"
-        }).map(highlight_desvio, subset=["Desvio (%)"])
-
-        st.dataframe(styled_df, use_container_width=True, hide_index=True)
+        # Tabela na tela (Também girada usando o recurso .T do Pandas!)
+        st.subheader("Visualização na Tela (Girar Tabela)")
+        df_display = df_res.copy().set_index("Campo").T
+        st.dataframe(df_display, use_container_width=True)
 
         st.divider()
-        st.subheader("📄 Exportar Ficha")
+        st.subheader("📄 Relatório PDF Oficial")
         
-        pdf_buf = gerar_pdf(df_res, nome_paciente, id_paciente, nome_plano, data_calc, logo_bytes, instituicao)
+        # O PDF agora é gerado na horizontal e transposto
+        pdf_buf = gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, logo_bytes, instituicao)
         
-        col_btn, col_prev = st.columns([1, 3])
+        col_btn, col_prev = st.columns([1, 4])
         with col_btn:
             nome_arq = f"verificacao_{id_paciente or 'paciente'}.pdf"
             st.download_button(
-                label="⬇️ Baixar Relatório (PDF)",
+                label="⬇️ Baixar PDF",
                 data=pdf_buf.getvalue(),
                 file_name=nome_arq,
                 mime="application/pdf",
@@ -416,8 +442,7 @@ with tab3:
             )
             
         with col_prev:
-            with st.expander("Pré-visualizar PDF gerado na tela", expanded=True):
-                # Utiliza Iframe nativo para ler o próprio PDF gerado (Sem HTML Falso)
+            with st.expander("Pré-visualizar PDF", expanded=True):
                 b64_pdf = base64.b64encode(pdf_buf.getvalue()).decode('utf-8')
                 pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" style="border: none; border-radius: 8px;"></iframe>'
                 st.markdown(pdf_display, unsafe_allow_html=True)
