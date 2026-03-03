@@ -141,7 +141,7 @@ with st.expander("1. Dados da Máquina (Fatores e TMR)", expanded=False):
 
     conteudo_maquina = None
     if fonte_dados_maquina == "Usar dados padrão (GitHub)":
-        url_github = "COLOQUE_AQUI_O_LINK_RAW_DO_SEU_GITHUB" 
+        url_github = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/refs/heads/main/clinac_fac_tmr.txt" 
         st.info("A usar a base de dados padrão da clínica alojada no GitHub.")
         try:
             if url_github.startswith("http"):
