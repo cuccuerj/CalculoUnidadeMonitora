@@ -2,27 +2,27 @@ import streamlit as st
 import pandas as pd
 import pdfplumber
 import re
+import numpy as np
+import urllib.request
+from scipy.interpolate import RegularGridInterpolator
 
 # --- CONFIGURAÇÕES FÍSICAS PADRÃO ---
 DMAX = 1.5 # Profundidade de dose máxima para 6X (Ajustar se a energia mudar)
 SAD = 100.0 # Distância Fonte-Eixo padrão da máquina
 
-# --- FUNÇÕES DE APOIO ---
+# --- FUNÇÕES DE APOIO MATEMÁTICO ---
 def calcular_eqsq(x, y):
-    """Calcula o Lado do Campo Quadrado Equivalente."""
     if x <= 0 or y <= 0:
         return 0.0
     return (4 * x * y) / (2 * (x + y))
 
-def calcular_fator_distancia(ssd,prof, dmax=DMAX, sad=SAD):
-    """Calcula o ISQF: ((SAD + dmax) / (ssd + prof))^2"""
+def calcular_fator_distancia(ssd, dmax=DMAX, sad=SAD):
     if ssd <= 0:
         return 0.0
-    return ((SAD + dmax) / (ssd + prof)) ** 2
+    return ((ssd + dmax) / sad) ** 2
 
 def extrair_dados_rt(pdf_file):
     dados_campos = {}
-    
     with pdfplumber.open(pdf_file) as pdf:
         texto_completo = ""
         for page in pdf.pages:
@@ -36,18 +36,9 @@ def extrair_dados_rt(pdf_file):
     
     for c in campos_encontrados:
         dados_campos[c] = {
-            "Plano": nome_plano,
-            "Campo": f"Campo {c}", 
-            "X": 0.0, 
-            "Y": 0.0, 
-            "Fsx (cm)": 0.0, 
-            "Fsy (cm)": 0.0, 
-            "FILTRO": "-", 
-            "UM (Eclipse)": 0.0, 
-            "DOSE": 0.0, 
-            "SSD": 0.0, 
-            "Prof.": 0.0, 
-            "Prof. Ef.": 0.0
+            "Plano": nome_plano, "Campo": f"Campo {c}", "X": 0.0, "Y": 0.0, 
+            "Fsx (cm)": 0.0, "Fsy (cm)": 0.0, "FILTRO": "-", "UM (Eclipse)": 0.0, 
+            "DOSE": 0.0, "SSD": 0.0, "Prof.": 0.0, "Prof. Ef.": 0.0
         }
 
     def buscar_valor(chave, campo_num, texto):
@@ -81,6 +72,49 @@ def extrair_dados_rt(pdf_file):
 
     return pd.DataFrame(dados_campos.values())
 
+# --- FUNÇÃO PARA LER O FICHEIRO DA MÁQUINA ---
+@st.cache_data # Memoriza os dados para não ter de ler o ficheiro sempre que clica num botão
+def carregar_tabelas_maquina(conteudo_texto):
+    linhas = conteudo_texto.split('\n')
+    campos = []
+    sc = []
+    sp = []
+    profundidades = []
+    tmr_matriz = []
+    
+    for linha in linhas:
+        # Divide por Tabulação ou por Espaços
+        partes = linha.strip().split('\t')
+        if len(partes) < 2:
+            partes = linha.strip().split()
+            
+        if not partes or len(partes) < 2:
+            continue
+            
+        rotulo = partes[0].strip().lower()
+        try:
+            # Substitui vírgulas por pontos caso existam
+            valores = [float(v.replace(',', '.')) for v in partes[1:] if v.strip() != '']
+        except ValueError:
+            continue 
+            
+        if rotulo == 'campo':
+            campos = valores
+        elif rotulo == 'sc':
+            sc = valores
+        elif rotulo == 'sp':
+            sp = valores
+        else:
+            try:
+                prof = float(rotulo.replace(',', '.'))
+                profundidades.append(prof)
+                tmr_matriz.append(valores)
+            except ValueError:
+                pass
+                
+    return np.array(campos), np.array(sc), np.array(sp), np.array(profundidades), np.array(tmr_matriz)
+
+
 # --- INTERFACE STREAMLIT ---
 st.set_page_config(page_title="Calculadora de UM - 3D", layout="wide")
 
@@ -94,16 +128,24 @@ fonte_dados_maquina = st.radio(
     ("Usar dados padrão (GitHub)", "Fazer upload de ficheiro TXT")
 )
 
-caminho_arquivo_maquina = None
+conteudo_maquina = None
+
 if fonte_dados_maquina == "Usar dados padrão (GitHub)":
     url_github = "COLOQUE_AQUI_O_LINK_RAW_DO_SEU_GITHUB" 
     st.info("A usar a base de dados padrão da clínica alojada no GitHub.")
-    caminho_arquivo_maquina = url_github
+    try:
+        # Se o utilizador não tiver mudado a URL ainda, não tentamos descarregar
+        if url_github.startswith("http"):
+            with urllib.request.urlopen(url_github) as response:
+                conteudo_maquina = response.read().decode('utf-8')
+    except Exception as e:
+        st.warning("Aguardando ligação ao GitHub. Cole o link RAW no código.")
+        
 elif fonte_dados_maquina == "Fazer upload de ficheiro TXT":
     arquivo_upload = st.file_uploader("Faça o upload do ficheiro TXT (Sc, Sp e TMR)", type=["txt"])
     if arquivo_upload is not None:
+        conteudo_maquina = arquivo_upload.getvalue().decode('utf-8')
         st.success("Ficheiro da máquina carregado com sucesso!")
-        caminho_arquivo_maquina = arquivo_upload
 
 st.divider()
 
@@ -139,29 +181,65 @@ elif metodo_entrada == "Inserção Manual":
         "FILTRO": "-", "UM (Eclipse)": 100.0, "DOSE": 100.0, "SSD": 100.0, "Prof.": 5.0, "Prof. Ef.": 5.0
     }])
 
-# --- CÁLCULOS INTERMEDIÁRIOS AUTOMÁTICOS ---
+# --- CÁLCULOS INTERMÉDIOS E INTERPOLAÇÃO AUTOMÁTICA ---
 if not df_paciente.empty:
-    st.subheader("Parâmetros do Planeamento e Cálculos Intermédios")
-    st.write("Reveja os dados. Os valores de EqSq e ISQF são calculados automaticamente.")
-    
-    # 1. Permite edição pelo utilizador
+    st.subheader("Parâmetros do Planeamento")
     df_editado = st.data_editor(df_paciente, num_rows="dynamic", use_container_width=True)
     
-    # 2. Faz os cálculos baseados na tabela editada
-    # Usamos st.container() apenas para organizar visualmente
     with st.container(border=True):
-        st.markdown("**Variáveis Calculadas para a Equação:**")
+        st.markdown("**Cálculos Intermédios e Fatores da Máquina:**")
         
-        # Cria cópia para não mexer na tabela original de edição
         df_calculos = df_editado.copy()
         
-        # Aplica as fórmulas que você solicitou
-        df_calculos['EqSq Colimador (Sc)'] = df_calculos.apply(lambda row: calcular_eqsq(row['X'], row['Y']), axis=1).round(2)
-        df_calculos['EqSq Fantoma (Sp/TMR)'] = df_calculos.apply(lambda row: calcular_eqsq(row['Fsx (cm)'], row['Fsy (cm)']), axis=1).round(2)
-        df_calculos['Fator Distância (ISQF)'] = df_calculos.apply(lambda row: calcular_fator_distancia(row['SSD'],row['Prof.']), axis=1).round(4)
+        # 1. Aplica as fórmulas de EqSq e Distância
+        df_calculos['EqSq Colimador'] = df_calculos.apply(lambda row: calcular_eqsq(row['X'], row['Y']), axis=1).round(2)
+        df_calculos['EqSq Fantoma'] = df_calculos.apply(lambda row: calcular_eqsq(row['Fsx (cm)'], row['Fsy (cm)']), axis=1).round(2)
+        df_calculos['Fator Distância (ISQF)'] = df_calculos.apply(lambda row: calcular_fator_distancia(row['SSD']), axis=1).round(4)
         
-        # Mostra apenas as colunas que importam para os próximos passos
-        colunas_mostrar = ['Plano', 'Campo', 'EqSq Colimador (Sc)', 'EqSq Fantoma (Sp/TMR)', 'Prof. Ef.', 'Fator Distância (ISQF)', 'DOSE']
-        st.dataframe(df_calculos[colunas_mostrar], use_container_width=True, hide_index=True)
-
-    st.info("Passo 5: Agora vamos usar estes valores de EqSq e Prof. Ef. para interpolar o Sc, Sp e TMR no seu ficheiro TXT!")
+        # 2. Interpolação dos valores da Máquina
+        if conteudo_maquina is not None:
+            # Lê e prepara as matrizes do ficheiro TXT
+            campos_maq, sc_maq, sp_maq, prof_maq, tmr_matriz_maq = carregar_tabelas_maquina(conteudo_maquina)
+            
+            # Prepara a função de interpolação bilinear (2D) para o TMR
+            # bounds_error=False e fill_value=None permitem extrapolar ligeiramente se necessário
+            interpolador_tmr = RegularGridInterpolator((prof_maq, campos_maq), tmr_matriz_maq, bounds_error=False, fill_value=None)
+            
+            sc_list = []
+            sp_list = []
+            tmr_list = []
+            
+            # Para cada campo (linha) da tabela do doente, buscamos o Sc, Sp e TMR
+            for index, row in df_calculos.iterrows():
+                # Interpolação 1D para Sc (baseado no EqSq Colimador)
+                sc_interp = np.interp(row['EqSq Colimador'], campos_maq, sc_maq)
+                
+                # Interpolação 1D para Sp (baseado no EqSq Fantoma)
+                sp_interp = np.interp(row['EqSq Fantoma'], campos_maq, sp_maq)
+                
+                # Interpolação 2D para TMR (Profundidade Efetiva, EqSq Fantoma)
+                # Verifica se a profundidade efetiva é maior que 0 para calcular
+                if row['Prof. Ef.'] > 0 and row['EqSq Fantoma'] > 0:
+                    tmr_interp = float(interpolador_tmr((row['Prof. Ef.'], row['EqSq Fantoma'])))
+                else:
+                    tmr_interp = 0.0
+                    
+                sc_list.append(round(sc_interp, 4))
+                sp_list.append(round(sp_interp, 4))
+                tmr_list.append(round(tmr_interp, 4))
+                
+            # Adiciona as novas colunas à tabela
+            df_calculos['Sc (Interpolado)'] = sc_list
+            df_calculos['Sp (Interpolado)'] = sp_list
+            df_calculos['TMR (Interpolado)'] = tmr_list
+            
+            # Mostra o resumo final dos fatores!
+            colunas_mostrar = ['Plano', 'Campo', 'EqSq Colimador', 'EqSq Fantoma', 'Sc (Interpolado)', 'Sp (Interpolado)', 'TMR (Interpolado)', 'Fator Distância (ISQF)']
+            st.dataframe(df_calculos[colunas_mostrar], use_container_width=True, hide_index=True)
+            
+            st.success("Passo 6: Todos os fatores foram extraídos e interpolados com sucesso! Falta apenas multiplicar tudo na equação final de UM.")
+        else:
+            # Caso o utilizador ainda não tenha feito upload do ficheiro TXT
+            st.warning("⚠️ Faça o upload do ficheiro TXT da máquina (Passo 1) para o sistema interpolar o Sc, Sp e TMR.")
+            colunas_mostrar_sem_maq = ['Plano', 'Campo', 'EqSq Colimador', 'EqSq Fantoma', 'Fator Distância (ISQF)']
+            st.dataframe(df_calculos[colunas_mostrar_sem_maq], use_container_width=True, hide_index=True)
