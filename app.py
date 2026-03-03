@@ -158,7 +158,7 @@ if not df_paciente.empty:
         # Aplica as fórmulas que você solicitou
         df_calculos['EqSq Colimador (Sc)'] = df_calculos.apply(lambda row: calcular_eqsq(row['X'], row['Y']), axis=1).round(2)
         df_calculos['EqSq Fantoma (Sp/TMR)'] = df_calculos.apply(lambda row: calcular_eqsq(row['Fsx (cm)'], row['Fsy (cm)']), axis=1).round(2)
-        df_calculos['Fator Distância (ISQF)'] = df_calculos.apply(lambda row: calcular_fator_distancia(row['SSD']),row['Prof.']), axis=1).round(4)
+        df_calculos['Fator Distância (ISQF)'] = df_calculos.apply(lambda row: calcular_fator_distancia(row['SSD'],row['Prof.']), axis=1).round(4)
         
         # Mostra apenas as colunas que importam para os próximos passos
         colunas_mostrar = ['Plano', 'Campo', 'EqSq Colimador (Sc)', 'EqSq Fantoma (Sp/TMR)', 'Prof. Ef.', 'Fator Distância (ISQF)', 'DOSE']
