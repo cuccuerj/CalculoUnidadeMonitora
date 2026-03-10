@@ -65,7 +65,6 @@ with st.sidebar:
 # PASSO 1: EXTRAÇÃO DO PLANEAMENTO
 # ══════════════════════════════════════════════════════════════════════════════
 st.subheader("1. Importar Relatório(s) (Eclipse)")
-# Adicionado accept_multiple_files=True
 pdf_files = st.file_uploader("Arraste um ou mais ficheiros PDF do planeamento aqui", type=["pdf"], accept_multiple_files=True)
 
 df_paciente = pd.DataFrame()
@@ -75,47 +74,17 @@ if pdf_files:
     with st.spinner(f"A processar {len(pdf_files)} documento(s) e a identificar os equipamentos..."):
         dfs_extraidos = []
         
-        # Processa cada PDF que o utilizador enviou
         for pdf_file in pdf_files:
             dados = extrair_dados_rt(pdf_file)
             
-            # Só adiciona se encontrou campos válidos naquele PDF
             if not dados["df"].empty:
                 dfs_extraidos.append(dados["df"])
             
-            # Atualiza o nome e ID do paciente (usa o primeiro que encontrar)
             if dados["nome"]: st.session_state["nome_paciente"] = dados["nome"]
             if dados["id"]: st.session_state["id_paciente"] = dados["id"]
             
-        # Se extraiu dados com sucesso de algum dos PDFs, junta tudo numa só tabela
         if dfs_extraidos:
             df_paciente = pd.concat(dfs_extraidos, ignore_index=True)
-            if not houve_erro and resultados_finais:
-            df_res = pd.concat(resultados_finais, ignore_index=True)
-            
-            # --- CORREÇÃO AQUI ---
-            # Identifica nomes de campos repetidos e adiciona um sufixo para não quebrar a tela
-            sufixos = df_res.groupby("Campo").cumcount()
-            df_res["Campo"] = df_res["Campo"] + sufixos.apply(lambda x: f" (PDF {x+1})" if x > 0 else "")
-            # ---------------------
-            
-            # Mostrar no ecrã (agora vai funcionar sem erros de colunas duplicadas)
-            st.dataframe(df_res.copy().set_index("Campo").T, use_container_width=True)
-            
-            # Gerar PDF
-            pdf_buf = gerar_pdf_transposto(
-                df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, instituicao=instituicao
-            )
-            
-            nome_arq = f"verificacao_{id_paciente or 'paciente'}.pdf"
-            st.download_button(
-                label="⬇️ Descarregar Relatório PDF Oficial",
-                data=pdf_buf.getvalue(),
-                file_name=nome_arq,
-                mime="application/pdf",
-                type="primary"
-            )
-            # Se for apenas um plano, usa o nome original. Se não, fica "Múltiplos Planos"
             if len(pdf_files) == 1:
                 nome_plano = df_paciente["Plano"].iloc[0] if not df_paciente.empty else ""
 
@@ -160,7 +129,12 @@ if not df_paciente.empty:
         if not houve_erro and resultados_finais:
             df_res = pd.concat(resultados_finais, ignore_index=True)
             
-            # Mostrar no ecrã
+            # --- CORREÇÃO DOS NOMES DUPLICADOS ---
+            # Identifica nomes de campos repetidos e adiciona um sufixo (ex: Campo 1 (PDF 2))
+            sufixos = df_res.groupby("Campo").cumcount()
+            df_res["Campo"] = df_res["Campo"] + sufixos.apply(lambda x: f" (PDF {x+1})" if x > 0 else "")
+            
+            # Mostrar no ecrã sem quebrar
             st.dataframe(df_res.copy().set_index("Campo").T, use_container_width=True)
             
             # Gerar PDF
