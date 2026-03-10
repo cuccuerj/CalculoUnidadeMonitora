@@ -41,21 +41,33 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 # PASSO 1: DADOS DO EQUIPAMENTO
 # ══════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# PASSO 1: DADOS DO EQUIPAMENTO
+# ══════════════════════════════════════════════════════════════════════════════
 st.subheader("1. Base de Dados do Acelerador")
 col_fonte, col_status = st.columns([1, 2])
 
+# Esta função com 'cache' protege o seu site de ser bloqueado pelo GitHub
+@st.cache_data(show_spinner=False, ttl=3600)
+def obter_dados_github(url_arquivo):
+    with urllib.request.urlopen(url_arquivo) as r:
+        return r.read().decode("utf-8")
+
 with col_fonte:
-    fonte = st.selectbox("Selecione a Tabela:", ["Usar dados do CL2100", "Fazer upload de TXT manual"])
+    fonte = st.selectbox("Selecione a Tabela:", ["Tabela CL2100", "Fazer upload de TXT manual"])
 
 if fonte == "Usar padrão do sistema (GitHub)":
     url = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/refs/heads/main/clinac_fac_tmr.txt"
     try:
-        with urllib.request.urlopen(url) as r:
-            st.session_state["conteudo_maquina"] = r.read().decode("utf-8")
+        # Puxa os dados apenas uma vez e guarda em cache por 1 hora (3600 seg)
+        texto_tabela = obter_dados_github(url)
+        st.session_state["conteudo_maquina"] = texto_tabela
+        
         with col_status:
-            st.info("Tabela padrão carregada e pronta para uso.")
-    except Exception:
-        st.error("Erro na ligação. Insira o ficheiro manualmente.")
+            st.success("Tabela padrão carregada e pronta para uso.")
+    except Exception as e:
+        with col_status:
+            st.error("O GitHub bloqueou o download temporariamente. Faça o upload manual do seu ficheiro TXT.")
 else:
     arq = st.file_uploader("Selecione o ficheiro TXT do equipamento", type=["txt"])
     if arq:
