@@ -68,7 +68,7 @@ st.subheader("1. Importar Relatório(s) (Eclipse)")
 pdf_files = st.file_uploader("Arraste um ou mais ficheiros PDF do planeamento aqui", type=["pdf"], accept_multiple_files=True)
 
 df_paciente = pd.DataFrame()
-nome_plano = "Múltiplos Planos"
+nome_plano = ""
 
 if pdf_files:
     with st.spinner(f"A processar {len(pdf_files)} documento(s) e a identificar os equipamentos..."):
@@ -85,8 +85,26 @@ if pdf_files:
             
         if dfs_extraidos:
             df_paciente = pd.concat(dfs_extraidos, ignore_index=True)
-            if len(pdf_files) == 1:
-                nome_plano = df_paciente["Plano"].iloc[0] if not df_paciente.empty else ""
+            
+            # --- ATUALIZAÇÃO: SOMA DOS NOMES DOS PLANOS ---
+            planos_unicos = [str(p) for p in df_paciente["Plano"].unique() if p]
+            nome_plano = " + ".join(planos_unicos) if planos_unicos else "Plano Manual"
+            
+            # --- ATUALIZAÇÃO: NOME DOS CAMPOS COM O PLANO ---
+            # 1. Verifica quais os campos que se repetem (ex: dois "Campo 1")
+            contagem = df_paciente["Campo"].value_counts()
+            campos_repetidos = contagem[contagem > 1].index
+            
+            # 2. Adiciona o nome do plano APENAS aos campos que entraram em conflito
+            for idx in df_paciente.index:
+                if df_paciente.loc[idx, "Campo"] in campos_repetidos:
+                    plano_atual = df_paciente.loc[idx, "Plano"]
+                    df_paciente.loc[idx, "Campo"] = f"{df_paciente.loc[idx, 'Campo']} ({plano_atual})"
+            
+            # 3. Proteção extra de segurança: se o utilizador arrastar o MESMO pdf duas vezes
+            sufixos = df_paciente.groupby("Campo").cumcount()
+            df_paciente["Campo"] = df_paciente["Campo"] + sufixos.apply(lambda x: f" - Cópia {x}" if x > 0 else "")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PASSO 2: REVISÃO E CÁLCULO
@@ -99,6 +117,7 @@ if not df_paciente.empty:
     data_calc = c3.date_input("Data da Avaliação", value=date.today())
 
     st.caption("Revise os parâmetros extraídos. A tabela será aplicada conforme o Aparelho/Energia listado abaixo:")
+    # A tabela exibida no ecrã já vai mostrar "Campo 1 (Mama)", o que facilita muito a conferência!
     df_edit = st.data_editor(df_paciente, num_rows="dynamic", use_container_width=True, hide_index=True)
 
     st.write("")
@@ -129,15 +148,10 @@ if not df_paciente.empty:
         if not houve_erro and resultados_finais:
             df_res = pd.concat(resultados_finais, ignore_index=True)
             
-            # --- CORREÇÃO DOS NOMES DUPLICADOS ---
-            # Identifica nomes de campos repetidos e adiciona um sufixo (ex: Campo 1 (PDF 2))
-            sufixos = df_res.groupby("Campo").cumcount()
-            df_res["Campo"] = df_res["Campo"] + sufixos.apply(lambda x: f" (PDF {x+1})" if x > 0 else "")
-            
-            # Mostrar no ecrã sem quebrar
+            # Mostrar no ecrã (já sem conflitos de nomes)
             st.dataframe(df_res.copy().set_index("Campo").T, use_container_width=True)
             
-            # Gerar PDF
+            # Gerar PDF (O nome_plano agora será "PlanoA + PlanoB")
             pdf_buf = gerar_pdf_transposto(
                 df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, instituicao=instituicao
             )
