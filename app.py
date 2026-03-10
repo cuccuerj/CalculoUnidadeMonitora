@@ -90,6 +90,31 @@ if pdf_files:
         # Se extraiu dados com sucesso de algum dos PDFs, junta tudo numa só tabela
         if dfs_extraidos:
             df_paciente = pd.concat(dfs_extraidos, ignore_index=True)
+            if not houve_erro and resultados_finais:
+            df_res = pd.concat(resultados_finais, ignore_index=True)
+            
+            # --- CORREÇÃO AQUI ---
+            # Identifica nomes de campos repetidos e adiciona um sufixo para não quebrar a tela
+            sufixos = df_res.groupby("Campo").cumcount()
+            df_res["Campo"] = df_res["Campo"] + sufixos.apply(lambda x: f" (PDF {x+1})" if x > 0 else "")
+            # ---------------------
+            
+            # Mostrar no ecrã (agora vai funcionar sem erros de colunas duplicadas)
+            st.dataframe(df_res.copy().set_index("Campo").T, use_container_width=True)
+            
+            # Gerar PDF
+            pdf_buf = gerar_pdf_transposto(
+                df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, instituicao=instituicao
+            )
+            
+            nome_arq = f"verificacao_{id_paciente or 'paciente'}.pdf"
+            st.download_button(
+                label="⬇️ Descarregar Relatório PDF Oficial",
+                data=pdf_buf.getvalue(),
+                file_name=nome_arq,
+                mime="application/pdf",
+                type="primary"
+            )
             # Se for apenas um plano, usa o nome original. Se não, fica "Múltiplos Planos"
             if len(pdf_files) == 1:
                 nome_plano = df_paciente["Plano"].iloc[0] if not df_paciente.empty else ""
