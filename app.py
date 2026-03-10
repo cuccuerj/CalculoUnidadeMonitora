@@ -7,6 +7,35 @@ from datetime import date
 from core.pdf_parser import extrair_dados_rt
 from core.math import carregar_tabelas_maquina, processar_calculos_tabela
 from utils.report_gen import gerar_pdf_transposto
+import urllib.request
+import urllib.error
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTO-DETEÇÃO DE MÁQUINA E ENERGIA
+# ══════════════════════════════════════════════════════════════════════════════
+def identificar_url_maquina(aparelho, energia):
+    a = str(aparelho).upper()
+    e = str(energia).upper()
+    
+    # Lógica de seleção
+    if "UNIQUE" in a:
+        return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/unique_fac_tmr.txt"
+    elif "2100" in a:
+        if "10" in e:
+            return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_10mv_fac_tmr.txt"
+        else:
+            return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_6mv_fac_tmr.txt"
+            
+    # Fallback (Padrão de segurança se o nome for estranho)
+    return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_6mv_fac_tmr.txt"
+
+# Função com CACHE para evitar bloqueio (Rate Limit) do GitHub
+@st.cache_data(show_spinner=False, ttl=3600)
+def obter_tabela_github(url):
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req) as r:
+        return r.read().decode("utf-8")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONFIGURAÇÃO MINIMALISTA
@@ -39,41 +68,82 @@ with st.sidebar:
     dict_filtros = dict(zip(df_filtros_edit["Filtro"], df_filtros_edit["Fator"]))
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PASSO 1: DADOS DO EQUIPAMENTO
+# PASSO 1: EXTRAÇÃO DO PLANEAMENTO (TPS)
 # ══════════════════════════════════════════════════════════════════════════════
-# ══════════════════════════════════════════════════════════════════════════════
-# PASSO 1: DADOS DO EQUIPAMENTO
-# ══════════════════════════════════════════════════════════════════════════════
-st.subheader("1. Base de Dados do Acelerador")
-col_fonte, col_status = st.columns([1, 2])
+st.subheader("1. Importar Relatório (Eclipse)")
+pdf_file = st.file_uploader("Arraste o ficheiro PDF do planeamento aqui", type=["pdf"])
 
-# Esta função com 'cache' protege o seu site de ser bloqueado pelo GitHub
-@st.cache_data(show_spinner=False, ttl=3600)
-def obter_dados_github(url_arquivo):
-    with urllib.request.urlopen(url_arquivo) as r:
-        return r.read().decode("utf-8")
+df_paciente = pd.DataFrame()
+nome_plano = ""
 
-with col_fonte:
-    fonte = st.selectbox("Selecione a Tabela:", ["Tabela CL2100", "Fazer upload de TXT manual"])
+if pdf_file:
+    with st.spinner("A processar documento e a identificar equipamentos..."):
+        dados = extrair_dados_rt(pdf_file)
+        df_paciente = dados["df"]
+        st.session_state["nome_paciente"] = dados["nome"]
+        st.session_state["id_paciente"] = dados["id"]
+        nome_plano = df_paciente["Plano"].iloc[0] if not df_paciente.empty else ""
 
-if fonte == "Usar padrão do sistema (GitHub)":
-    url = "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/refs/heads/main/clinac_fac_tmr.txt"
-    try:
-        # Puxa os dados apenas uma vez e guarda em cache por 1 hora (3600 seg)
-        texto_tabela = obter_dados_github(url)
-        st.session_state["conteudo_maquina"] = texto_tabela
+if not df_paciente.empty:
+    c1, c2, c3 = st.columns(3)
+    nome_paciente = c1.text_input("Paciente", value=st.session_state["nome_paciente"])
+    id_paciente = c2.text_input("ID / Processo", value=st.session_state["id_paciente"])
+    data_calc = c3.date_input("Data da Avaliação", value=date.today())
+
+    st.caption("Revise os parâmetros. A tabela TMR/Sc/Sp será selecionada automaticamente baseada na coluna Aparelho/Energia.")
+    df_edit = st.data_editor(df_paciente, num_rows="dynamic", use_container_width=True, hide_index=True)
+
+    # ══════════════════════════════════════════════════════════════════════════════
+    # PASSO 2: CÁLCULO INTELIGENTE E RESULTADOS
+    # ══════════════════════════════════════════════════════════════════════════════
+    st.write("")
+    st.subheader("2. Resultados da Conferência")
+    
+    if st.button("Calcular Parâmetros e Gerar Relatório", type="primary", use_container_width=True):
         
-        with col_status:
-            st.success("Tabela padrão carregada e pronta para uso.")
-    except Exception as e:
-        with col_status:
-            st.error("O GitHub bloqueou o download temporariamente. Faça o upload manual do seu ficheiro TXT.")
-else:
-    arq = st.file_uploader("Selecione o ficheiro TXT do equipamento", type=["txt"])
-    if arq:
-        st.session_state["conteudo_maquina"] = arq.getvalue().decode("utf-8")
-
-conteudo_maquina = st.session_state.get("conteudo_maquina")
+        resultados_finais = []
+        houve_erro = False
+        
+        with st.spinner("A transferir tabelas do equipamento e a calcular..."):
+            # O sistema agora calcula campo a campo, buscando a tabela certa para cada um
+            for index, row in df_edit.iterrows():
+                url_maq = identificar_url_maquina(row["Aparelho"], row["Energia"])
+                
+                try:
+                    # Vai buscar ao GitHub (ou à memória cache se já tiver transferido hoje)
+                    texto_maq = obter_tabela_github(url_maq)
+                    campos_m, sc_m, sp_m, prof_m, tmr_m, dmax = carregar_tabelas_maquina(texto_maq)
+                    
+                    # Cria um micro-dataframe só com esta linha para a função de matemática processar
+                    df_linha = pd.DataFrame([row])
+                    res_linha = processar_calculos_tabela(df_linha, campos_m, sc_m, sp_m, prof_m, tmr_m, dmax, dose_ref, dict_filtros)
+                    resultados_finais.append(res_linha)
+                    
+                except Exception as e:
+                    st.error(f"Erro ao carregar os dados para a máquina do {row['Campo']}. Verifique se a ligação à internet está ativa.")
+                    houve_erro = True
+                    break
+        
+        if not houve_erro and resultados_finais:
+            # Junta todos os resultados de volta num único DataFrame
+            df_res = pd.concat(resultados_finais, ignore_index=True)
+            
+            # Exibir Tabela Rodada no Ecrã
+            st.dataframe(df_res.copy().set_index("Campo").T, use_container_width=True)
+            
+            # Gerar o PDF Transposto
+            pdf_buf = gerar_pdf_transposto(
+                df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, instituicao=instituicao
+            )
+            
+            nome_arq = f"verificacao_{id_paciente or 'paciente'}.pdf"
+            st.download_button(
+                label="Descarregar Relatório PDF",
+                data=pdf_buf.getvalue(),
+                file_name=nome_arq,
+                mime="application/pdf",
+                type="primary"
+            )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PASSO 2: DADOS DO PLANEAMENTO
