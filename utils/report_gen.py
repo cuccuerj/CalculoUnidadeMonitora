@@ -33,8 +33,6 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     info_fixa = f"Relatório Paramétrico Completo &nbsp;&nbsp;|&nbsp;&nbsp; Fator de Calibração: {dose_ref:.3f} cGy/UM &nbsp;&nbsp;|&nbsp;&nbsp; SAD: {SAD:.1f} cm"
     story.append(Paragraph(info_fixa, s_sub))
     story.append(HRFlowable(width="100%", thickness=1.5, color=VERDE))
-
-    story.append(Paragraph("Identificação", s_sec))
     t_pac = Table([
         ["Paciente:", nome_paciente or "N/A", "Prontuário:", id_paciente or "N/A", "Data do Cálculo:", data_calc.strftime("%d/%m/%Y")],
         ["Plano:", nome_plano or "N/A", "", "", "", ""]
@@ -49,8 +47,6 @@ def gerar_pdf_transposto(df_res, nome_paciente, id_paciente, nome_plano, data_ca
     ]))
     story.append(t_pac)
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.lightgrey))
-
-    story.append(Paragraph("Tabela Dosimétrica (Transposta)", s_sec))
 
     parametros = [
         ("Aparelho", lambda r: str(r["Aparelho"])),
