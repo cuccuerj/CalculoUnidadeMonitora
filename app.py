@@ -64,19 +64,35 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════════════════
 # PASSO 1: EXTRAÇÃO DO PLANEAMENTO
 # ══════════════════════════════════════════════════════════════════════════════
-st.subheader("1. Importar Relatório (Eclipse)")
-pdf_file = st.file_uploader("Arraste o ficheiro PDF do planeamento aqui", type=["pdf"])
+st.subheader("1. Importar Relatório(s) (Eclipse)")
+# Adicionado accept_multiple_files=True
+pdf_files = st.file_uploader("Arraste um ou mais ficheiros PDF do planeamento aqui", type=["pdf"], accept_multiple_files=True)
 
 df_paciente = pd.DataFrame()
-nome_plano = ""
+nome_plano = "Múltiplos Planos"
 
-if pdf_file:
-    with st.spinner("A extrair dados e a identificar os equipamentos..."):
-        dados = extrair_dados_rt(pdf_file)
-        df_paciente = dados["df"]
-        st.session_state["nome_paciente"] = dados["nome"]
-        st.session_state["id_paciente"] = dados["id"]
-        nome_plano = df_paciente["Plano"].iloc[0] if not df_paciente.empty else ""
+if pdf_files:
+    with st.spinner(f"A processar {len(pdf_files)} documento(s) e a identificar os equipamentos..."):
+        dfs_extraidos = []
+        
+        # Processa cada PDF que o utilizador enviou
+        for pdf_file in pdf_files:
+            dados = extrair_dados_rt(pdf_file)
+            
+            # Só adiciona se encontrou campos válidos naquele PDF
+            if not dados["df"].empty:
+                dfs_extraidos.append(dados["df"])
+            
+            # Atualiza o nome e ID do paciente (usa o primeiro que encontrar)
+            if dados["nome"]: st.session_state["nome_paciente"] = dados["nome"]
+            if dados["id"]: st.session_state["id_paciente"] = dados["id"]
+            
+        # Se extraiu dados com sucesso de algum dos PDFs, junta tudo numa só tabela
+        if dfs_extraidos:
+            df_paciente = pd.concat(dfs_extraidos, ignore_index=True)
+            # Se for apenas um plano, usa o nome original. Se não, fica "Múltiplos Planos"
+            if len(pdf_files) == 1:
+                nome_plano = df_paciente["Plano"].iloc[0] if not df_paciente.empty else ""
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PASSO 2: REVISÃO E CÁLCULO
