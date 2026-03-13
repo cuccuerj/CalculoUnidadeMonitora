@@ -7,13 +7,13 @@ from scipy.interpolate import RegularGridInterpolator
 SAD = 100.0
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TABELA DE FATORES EDW (Enhanced Dynamic Wedge) — UNIQUE 6MV
+# TABELAS DE FATORES EDW (Enhanced Dynamic Wedge)
 # ══════════════════════════════════════════════════════════════════════════════
-# Indexada por jaw individual (Y1 ou Y2) em cm × ângulo de cunha.
+# Indexadas por jaw individual (Y1 ou Y2) em cm × ângulo de cunha.
 # IN e OUT usam a mesma tabela de fatores, mas jaws diferentes:
 #   EDW OUT → interpola com Y1
 #   EDW IN  → interpola com Y2
-# Fonte: dados comissionados UNIQUE (GSTT).
+# Tabelas separadas para 6MV e 10MV.
 
 _EDW_JAW_SIZES = np.array([
     0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5,
@@ -22,7 +22,8 @@ _EDW_JAW_SIZES = np.array([
 
 _EDW_ANGLES = [10, 15, 20, 25, 30, 45, 60]
 
-_EDW_FACTORS = np.array([
+# ── 6MV ──
+_EDW_FACTORS_6MV = np.array([
     # EDW10   EDW15   EDW20   EDW25   EDW30   EDW45   EDW60
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9577],  # 0
     [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9854, 0.9295],  # 0.5
@@ -47,10 +48,36 @@ _EDW_FACTORS = np.array([
     [0.8550, 0.8000, 0.7550, 0.7107, 0.6700, 0.5444, 0.4130],  # 10
 ])
 
+# ── 10MV ──
+_EDW_FACTORS_10MV = np.array([
+    # EDW10   EDW15   EDW20   EDW25   EDW30   EDW45   EDW60
+    [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9711],  # 0
+    [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9909, 0.9453],  # 0.5
+    [1.0000, 1.0000, 1.0000, 1.0000, 0.9950, 0.9706, 0.9196],  # 1
+    [1.0000, 0.9962, 0.9948, 0.9880, 0.9804, 0.9503, 0.8938],  # 1.5
+    [0.9940, 0.9840, 0.9820, 0.9740, 0.9650, 0.9380, 0.8920],  # 2
+    [0.9890, 0.9790, 0.9720, 0.9620, 0.9490, 0.9150, 0.8580],  # 2.5
+    [0.9840, 0.9710, 0.9620, 0.9480, 0.9380, 0.8910, 0.8220],  # 3
+    [0.9790, 0.9650, 0.9540, 0.9390, 0.9240, 0.8700, 0.7920],  # 3.5
+    [0.9730, 0.9560, 0.9430, 0.9250, 0.9060, 0.8460, 0.7580],  # 4
+    [0.9680, 0.9490, 0.9330, 0.9130, 0.8930, 0.8260, 0.7300],  # 4.5
+    [0.9630, 0.9400, 0.9220, 0.9010, 0.8790, 0.8050, 0.7020],  # 5
+    [0.9570, 0.9320, 0.9110, 0.8890, 0.8640, 0.7830, 0.6730],  # 5.5
+    [0.9510, 0.9240, 0.9010, 0.8760, 0.8500, 0.7630, 0.6480],  # 6
+    [0.9450, 0.9150, 0.8900, 0.8620, 0.8340, 0.7430, 0.6240],  # 6.5
+    [0.9390, 0.9080, 0.8800, 0.8520, 0.8200, 0.7220, 0.6010],  # 7
+    [0.9360, 0.9010, 0.8710, 0.8410, 0.8080, 0.7060, 0.5780],  # 7.5
+    [0.9250, 0.8890, 0.8570, 0.8240, 0.7890, 0.6840, 0.5550],  # 8
+    [0.9200, 0.8830, 0.8480, 0.8130, 0.7770, 0.6670, 0.5350],  # 8.5
+    [0.9140, 0.8740, 0.8370, 0.7990, 0.7610, 0.6480, 0.5150],  # 9
+    [0.9070, 0.8640, 0.8250, 0.7850, 0.7460, 0.6300, 0.4950],  # 9.5
+    [0.9000, 0.8550, 0.8130, 0.7720, 0.7320, 0.6130, 0.4770],  # 10
+])
+
 _EDW_ANGLE_IDX = {a: i for i, a in enumerate(_EDW_ANGLES)}
 
 
-def obter_fator_edw(filtro_nome: str, jaw_y1: float, jaw_y2: float) -> float | None:
+def obter_fator_edw(filtro_nome: str, jaw_y1: float, jaw_y2: float, energia: str = "6X") -> float | None:
     """
     Retorna o fator EDW interpolado.
 
@@ -62,14 +89,17 @@ def obter_fator_edw(filtro_nome: str, jaw_y1: float, jaw_y2: float) -> float | N
         Posição da jaw Y1 em cm.
     jaw_y2 : float
         Posição da jaw Y2 em cm.
+    energia : str
+        Energia do feixe ("6X", "10X", etc.). Seleciona a tabela correta.
 
     Retorna
     -------
     float ou None se não for EDW.
 
-    Lógica de indexação:
+    Lógica:
         EDW OUT → interpola com jaw Y1
         EDW IN  → interpola com jaw Y2
+        Energia com "10" → tabela 10MV, senão → tabela 6MV
     """
     m = re.match(r"EDW(\d+)(IN|OUT)", filtro_nome, re.IGNORECASE)
     if not m:
@@ -84,8 +114,14 @@ def obter_fator_edw(filtro_nome: str, jaw_y1: float, jaw_y2: float) -> float | N
     col = _EDW_ANGLE_IDX[angulo]
     jaw = jaw_y1 if direcao == "OUT" else jaw_y2
 
+    # Selecionar tabela pela energia
+    if "10" in str(energia).upper():
+        tabela = _EDW_FACTORS_10MV
+    else:
+        tabela = _EDW_FACTORS_6MV
+
     jaw_clamp = np.clip(jaw, _EDW_JAW_SIZES[0], _EDW_JAW_SIZES[-1])
-    return float(np.interp(jaw_clamp, _EDW_JAW_SIZES, _EDW_FACTORS[:, col]))
+    return float(np.interp(jaw_clamp, _EDW_JAW_SIZES, tabela[:, col]))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -147,8 +183,8 @@ def processar_calculos_tabela(df_edit, campos_m, sc_m, sp_m, prof_m, tmr_m, dmax
     Cálculo de UM para todos os campos.
 
     Fator de filtro:
-      - EDW: calculado automaticamente da tabela comissionada
-        usando a jaw correta (Y1 para OUT, Y2 para IN).
+      - EDW: calculado automaticamente da tabela comissionada,
+        usando jaw Y1 (OUT) ou Y2 (IN) e a energia do campo.
       - Outros (Acrílico, bandeja): usa dict_filtros da sidebar.
       - Sem filtro: 1.0.
     """
@@ -173,7 +209,8 @@ def processar_calculos_tabela(df_edit, campos_m, sc_m, sp_m, prof_m, tmr_m, dmax
         filtro_nome = row["FILTRO"]
         jaw_y1 = row.get("Jaw Y1", 0.0)
         jaw_y2 = row.get("Jaw Y2", 0.0)
-        ff_edw = obter_fator_edw(filtro_nome, jaw_y1, jaw_y2)
+        energia = row.get("Energia", "6X")
+        ff_edw = obter_fator_edw(filtro_nome, jaw_y1, jaw_y2, energia)
         if ff_edw is not None:
             ff = ff_edw
         else:
