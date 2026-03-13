@@ -171,20 +171,54 @@ def extrair_dados_rt(pdf_file, mu_threshold=50):
     }
 
     # ══════════════════════════════════════════════════════════════════════
-    # 7. Fsx / Fsy (a partir dos blocos "Informações" de fluência)
+    # 7. Fsx / Fsy POR BLOCO DE INFORMAÇÕES (não sequencial)
     # ══════════════════════════════════════════════════════════════════════
+    # Cada campo tem um bloco "Campo <n>\n---\nInformações: ...\n---"
+    # na seção "Informações do Campo". Precisamos associar o fsx/fsy
+    # correto a cada campo. Campos com EDW (cunha dinâmica) não têm
+    # dados de fluência total — nesse caso, usamos X, Y do colimador.
+
     padrao_fs = (
         r"(?:fluência total|total fluence).{0,100}?"
         r"fsx\s*=\s*([\d.]+)\s*mm"
         r"(?:.{0,50}?fsy\s*=\s*([\d.]+)\s*mm)?"
     )
-    matches_fs = re.findall(padrao_fs, texto_completo, re.IGNORECASE | re.DOTALL)
+
+    field_fluence: dict[str, tuple[float, float]] = {}
+
+    # Isolar a seção de informações (após "Informações do Campo")
+    info_start = re.search(
+        r"(?:Informações do Campo|Field Information)", texto_completo, re.IGNORECASE
+    )
+    info_text = texto_completo[info_start.start():] if info_start else ""
+
+    if info_text:
+        # Cada bloco: "Campo <n>\n---\n<conteúdo>\n---"
+        block_pattern = r"^(?:Campo|Field)\s+(.+?)\n-{3,}\n(.*?)(?=\n-{3,})"
+        for m in re.finditer(block_pattern, info_text, re.MULTILINE | re.DOTALL):
+            block_name = m.group(1).strip()
+            block_content = m.group(2)
+
+            # Identificar a qual campo pertence
+            matched_fn = None
+            for fn in sorted(field_names, key=len, reverse=True):
+                if block_name == fn:
+                    matched_fn = fn
+                    break
+            if not matched_fn:
+                continue
+
+            # Procurar fsx/fsy neste bloco
+            fs_match = re.search(padrao_fs, block_content, re.IGNORECASE | re.DOTALL)
+            if fs_match:
+                fsx_mm = float(fs_match.group(1))
+                fsy_mm = float(fs_match.group(2) or fs_match.group(1))
+                field_fluence[matched_fn] = (fsx_mm / 10.0, fsy_mm / 10.0)
 
     # ══════════════════════════════════════════════════════════════════════
     # 8. MONTAR DataFrame FINAL (com filtro de threshold)
     # ══════════════════════════════════════════════════════════════════════
     dados_campos = {}
-    fs_idx = 0  # índice nas correspondências de fluência
 
     for fn in field_names:
         mu_str = sec["MU"].get(fn, "")
@@ -195,13 +229,6 @@ def extrair_dados_rt(pdf_file, mu_threshold=50):
 
         mu_val = _parse_numeric(mu_str)
 
-        # Ler Fsx/Fsy (consumir o match mesmo se o campo for filtrado)
-        fsx, fsy = 0.0, 0.0
-        if fs_idx < len(matches_fs):
-            fsx = float(matches_fs[fs_idx][0]) / 10.0
-            fsy = float(matches_fs[fs_idx][1] or matches_fs[fs_idx][0]) / 10.0
-            fs_idx += 1
-
         # Aplicar threshold de UM
         if mu_val < mu_threshold:
             continue
@@ -210,13 +237,25 @@ def extrair_dados_rt(pdf_file, mu_threshold=50):
         filtro_raw = sec["Filtro"].get(fn, "-")
         filtro = "Nenhum" if (not filtro_raw or filtro_raw == "-") else filtro_raw
 
+        # Fsx/Fsy: usar dados de fluência se disponíveis,
+        # senão fallback para tamanho do colimador (X, Y).
+        # Isso é o correto para campos com EDW (campo aberto, sem MLC).
+        x_val = _parse_numeric(sec["X"].get(fn, ""))
+        y_val = _parse_numeric(sec["Y"].get(fn, ""))
+
+        if fn in field_fluence:
+            fsx, fsy = field_fluence[fn]
+        else:
+            # Fallback: colimador = fantoma (campo aberto / EDW)
+            fsx, fsy = x_val, y_val
+
         dados_campos[fn] = {
             "Plano": nome_plano,
             "Campo": fn,
             "Aparelho": aparelho_default,
             "Energia": field_energies.get(fn, energia_default),
-            "X": _parse_numeric(sec["X"].get(fn, "")),
-            "Y": _parse_numeric(sec["Y"].get(fn, "")),
+            "X": x_val,
+            "Y": y_val,
             "Fsx (cm)": fsx,
             "Fsy (cm)": fsy,
             "FILTRO": filtro,
