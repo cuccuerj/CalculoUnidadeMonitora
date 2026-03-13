@@ -202,50 +202,9 @@ with st.spinner("Extraindo dados e calculando..."):
     sufixos = df_paciente.groupby("Campo").cumcount()
     df_paciente["Campo"] = df_paciente["Campo"].astype(str) + sufixos.apply(lambda x: f" #{x+1}" if x > 0 else "")
 
-    # Garantir que a coluna Fator Filtro exista com default 1.0
-    if "Fator Filtro" not in df_paciente.columns:
-        df_paciente["Fator Filtro"] = 1.000
-
-# ══════════════════════════════════════════════════════════════════════════════
-# CAMPOS COM FILTRO — input manual do fator
-# ══════════════════════════════════════════════════════════════════════════════
-campos_com_filtro = df_paciente[
-    (df_paciente["FILTRO"] != "Nenhum") & (df_paciente["FILTRO"] != "-") & (df_paciente["FILTRO"] != "")
-]
-
-if not campos_com_filtro.empty:
-    st.markdown("""
-    <div style="
-        background: linear-gradient(135deg, #fffbeb 0%, #fef9c3 100%);
-        border: 1px solid #fbbf24;
-        border-radius: 10px;
-        padding: 0.75rem 1rem;
-        margin: 0.5rem 0;
-        font-family: 'DM Sans', sans-serif;
-    ">
-        <span style="font-size:0.82rem; font-weight:600; color:#92400e;">
-            ⚠ Campos com filtro detectados
-        </span>
-        <span style="font-size:0.78rem; color:#a16207; margin-left:0.4rem;">
-            — Insira o fator de filtro para cada campo abaixo
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    filter_cols = st.columns(min(len(campos_com_filtro), 4))
-    for i, (idx, row) in enumerate(campos_com_filtro.iterrows()):
-        col = filter_cols[i % len(filter_cols)]
-        with col:
-            fator = st.number_input(
-                f"{row['Campo']}  ({row['FILTRO']})",
-                value=1.000,
-                min_value=0.000,
-                max_value=2.000,
-                step=0.001,
-                format="%.3f",
-                key=f"ff_{idx}",
-            )
-            df_paciente.at[idx, "Fator Filtro"] = fator
+    # Remover coluna Fator Filtro se existia (agora é automático via tabela EDW)
+    if "Fator Filtro" in df_paciente.columns:
+        df_paciente.drop(columns=["Fator Filtro"], inplace=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CÁLCULO
