@@ -1,3 +1,4 @@
+import re
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -5,7 +6,91 @@ from scipy.interpolate import RegularGridInterpolator
 
 SAD = 100.0
 
+# ══════════════════════════════════════════════════════════════════════════════
+# TABELA DE FATORES EDW (Enhanced Dynamic Wedge) — UNIQUE 6MV
+# ══════════════════════════════════════════════════════════════════════════════
+# Indexada por jaw individual (Y1 ou Y2) em cm × ângulo de cunha.
+# IN e OUT usam a mesma tabela de fatores, mas jaws diferentes:
+#   EDW OUT → interpola com Y1
+#   EDW IN  → interpola com Y2
+# Fonte: dados comissionados UNIQUE (GSTT).
 
+_EDW_JAW_SIZES = np.array([
+    0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5,
+    5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0,
+])
+
+_EDW_ANGLES = [10, 15, 20, 25, 30, 45, 60]
+
+_EDW_FACTORS = np.array([
+    # EDW10   EDW15   EDW20   EDW25   EDW30   EDW45   EDW60
+    [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9577],  # 0
+    [1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.9854, 0.9295],  # 0.5
+    [1.0000, 1.0000, 1.0000, 0.9995, 0.9929, 0.9620, 0.9013],  # 1
+    [1.0000, 0.9978, 0.9921, 0.9841, 0.9753, 0.9387, 0.8730],  # 1.5
+    [0.9841, 0.9750, 0.9700, 0.9607, 0.9500, 0.9202, 0.8700],  # 2
+    [0.9800, 0.9700, 0.9600, 0.9504, 0.9400, 0.8972, 0.8350],  # 2.5
+    [0.9750, 0.9650, 0.9500, 0.9361, 0.9200, 0.8706, 0.7950],  # 3
+    [0.9700, 0.9550, 0.9350, 0.9202, 0.9050, 0.8438, 0.7580],  # 3.5
+    [0.9650, 0.9450, 0.9300, 0.9085, 0.8900, 0.8210, 0.7250],  # 4
+    [0.9600, 0.9350, 0.9150, 0.8936, 0.8700, 0.7960, 0.6930],  # 4.5
+    [0.9500, 0.9250, 0.9000, 0.8759, 0.8500, 0.7689, 0.6600],  # 5
+    [0.9450, 0.9200, 0.8900, 0.8656, 0.8400, 0.7493, 0.6350],  # 5.5
+    [0.9350, 0.9050, 0.8750, 0.8472, 0.8200, 0.7233, 0.6030],  # 6
+    [0.9300, 0.8950, 0.8650, 0.8334, 0.8000, 0.7018, 0.5780],  # 6.5
+    [0.9200, 0.8850, 0.8500, 0.8183, 0.7850, 0.6793, 0.5500],  # 7
+    [0.9200, 0.8800, 0.8450, 0.8079, 0.7750, 0.6616, 0.5300],  # 7.5
+    [0.9050, 0.8650, 0.8250, 0.7858, 0.7500, 0.6348, 0.5030],  # 8
+    [0.8950, 0.8500, 0.8100, 0.7692, 0.7300, 0.6131, 0.4800],  # 8.5
+    [0.8850, 0.8350, 0.7950, 0.7516, 0.7100, 0.5910, 0.4580],  # 9
+    [0.8650, 0.8150, 0.7600, 0.7287, 0.6850, 0.5655, 0.4350],  # 9.5
+    [0.8550, 0.8000, 0.7550, 0.7107, 0.6700, 0.5444, 0.4130],  # 10
+])
+
+_EDW_ANGLE_IDX = {a: i for i, a in enumerate(_EDW_ANGLES)}
+
+
+def obter_fator_edw(filtro_nome: str, jaw_y1: float, jaw_y2: float) -> float | None:
+    """
+    Retorna o fator EDW interpolado.
+
+    Parâmetros
+    ----------
+    filtro_nome : str
+        Nome do filtro (ex: "EDW45OUT", "EDW30IN").
+    jaw_y1 : float
+        Posição da jaw Y1 em cm.
+    jaw_y2 : float
+        Posição da jaw Y2 em cm.
+
+    Retorna
+    -------
+    float ou None se não for EDW.
+
+    Lógica de indexação:
+        EDW OUT → interpola com jaw Y1
+        EDW IN  → interpola com jaw Y2
+    """
+    m = re.match(r"EDW(\d+)(IN|OUT)", filtro_nome, re.IGNORECASE)
+    if not m:
+        return None
+
+    angulo = int(m.group(1))
+    direcao = m.group(2).upper()
+
+    if angulo not in _EDW_ANGLE_IDX:
+        return None
+
+    col = _EDW_ANGLE_IDX[angulo]
+    jaw = jaw_y1 if direcao == "OUT" else jaw_y2
+
+    jaw_clamp = np.clip(jaw, _EDW_JAW_SIZES[0], _EDW_JAW_SIZES[-1])
+    return float(np.interp(jaw_clamp, _EDW_JAW_SIZES, _EDW_FACTORS[:, col]))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FUNÇÕES DE CÁLCULO
+# ══════════════════════════════════════════════════════════════════════════════
 def calcular_eqsq(x, y):
     if x <= 0 or y <= 0:
         return 0.0
@@ -59,12 +144,13 @@ def carregar_tabelas_maquina(conteudo_texto):
 
 def processar_calculos_tabela(df_edit, campos_m, sc_m, sp_m, prof_m, tmr_m, dmax, dose_ref, dict_filtros):
     """
-    Loop de cálculo por todos os campos. Retorna DataFrame com resultados.
+    Cálculo de UM para todos os campos.
 
-    Prioridade do fator de filtro:
-      1. Coluna "Fator Filtro" no DataFrame (digitado pelo usuário na UI)
-      2. dict_filtros da sidebar (para filtros mapeados por nome)
-      3. Default 1.0
+    Fator de filtro:
+      - EDW: calculado automaticamente da tabela comissionada
+        usando a jaw correta (Y1 para OUT, Y2 para IN).
+      - Outros (Acrílico, bandeja): usa dict_filtros da sidebar.
+      - Sem filtro: 1.0.
     """
     interp_tmr = RegularGridInterpolator(
         (prof_m, campos_m), tmr_m, bounds_error=False, fill_value=None
@@ -83,11 +169,15 @@ def processar_calculos_tabela(df_edit, campos_m, sc_m, sp_m, prof_m, tmr_m, dmax
             else 0.0
         )
 
-        # Fator de filtro: prioridade para o valor digitado pelo usuário
-        if "Fator Filtro" in row.index and row["Fator Filtro"] != 1.0:
-            ff = row["Fator Filtro"]
+        # ── Fator de filtro ──
+        filtro_nome = row["FILTRO"]
+        jaw_y1 = row.get("Jaw Y1", 0.0)
+        jaw_y2 = row.get("Jaw Y2", 0.0)
+        ff_edw = obter_fator_edw(filtro_nome, jaw_y1, jaw_y2)
+        if ff_edw is not None:
+            ff = ff_edw
         else:
-            ff = dict_filtros.get(row["FILTRO"], 1.0)
+            ff = dict_filtros.get(filtro_nome, 1.0)
 
         oar = row.get("OAR", 1.0)
 
