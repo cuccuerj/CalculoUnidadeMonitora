@@ -156,6 +156,22 @@ def extrair_dados_rt(pdf_file, mu_threshold=50):
                     break
         return result
 
+    def _build_jaw_map(section_key: str) -> dict[str, str]:
+        """Parser especial para seções Jaw Y1/Y2.
+
+        Linhas têm formato: 'Campo <n> Y1: +3.2 cm'
+        Retorna {field_name: valor_numerico_string}.
+        """
+        result = {}
+        for line in section_data.get(section_key, []):
+            for fn in sorted(field_names, key=len, reverse=True):
+                pattern = rf"(?:Campo|Field)\s+{re.escape(fn)}\s+(?:Y[12]|X[12]):\s*([+-]?[\d.]+)"
+                m = re.match(pattern, line.strip())
+                if m and fn not in result:
+                    result[fn] = m.group(1).strip()
+                    break
+        return result
+
     # ══════════════════════════════════════════════════════════════════════
     # 6. MAPEAR VALORES POR SEÇÃO
     # ══════════════════════════════════════════════════════════════════════
@@ -168,6 +184,8 @@ def extrair_dados_rt(pdf_file, mu_threshold=50):
         "Prof":   _build_section_map("Profundidade") or _build_section_map("Depth"),
         "ProfEf": _build_section_map("Profundidade Efetiva") or _build_section_map("Effective Depth"),
         "Filtro": _build_section_map("Filtro") or _build_section_map("Filter"),
+        "JawY1":  _build_jaw_map("Jaw Y1"),
+        "JawY2":  _build_jaw_map("Jaw Y2"),
     }
 
     # ══════════════════════════════════════════════════════════════════════
@@ -258,6 +276,8 @@ def extrair_dados_rt(pdf_file, mu_threshold=50):
             "Y": y_val,
             "Fsx (cm)": fsx,
             "Fsy (cm)": fsy,
+            "Jaw Y1": _parse_numeric(sec["JawY1"].get(fn, "")),
+            "Jaw Y2": _parse_numeric(sec["JawY2"].get(fn, "")),
             "FILTRO": filtro,
             "OAR": 1.000,
             "UM (Eclipse)": mu_val,
