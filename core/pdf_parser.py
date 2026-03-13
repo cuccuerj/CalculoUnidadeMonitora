@@ -1,232 +1,383 @@
-import pdfplumber
-import re
+import streamlit as st
 import pandas as pd
+import urllib.request
+from datetime import date
 
+from core.pdf_parser import extrair_dados_rt
+from core.math import carregar_tabelas_maquina, processar_calculos_tabela
+from utils.report_gen import gerar_pdf_transposto
 
-def extrair_dados_rt(pdf_file, mu_threshold=50):
-    """
-    Parser robusto para relatórios Eclipse (External Beam Planning).
+# ══════════════════════════════════════════════════════════════════════════════
+# FUNÇÕES AUXILIARES
+# ══════════════════════════════════════════════════════════════════════════════
+def identificar_url_maquina(aparelho, energia):
+    a = str(aparelho).upper()
+    e = str(energia).upper()
+    if "UNIQUE" in a:
+        return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/unique_fac_tmr.txt"
+    elif "2100" in a:
+        if "10" in e:
+            return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_10mv_fac_tmr.txt"
+        else:
+            return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_6mv_fac_tmr.txt"
+    return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_6mv_fac_tmr.txt"
 
-    Melhorias em relação à versão anterior:
-      - Usa os nomes reais dos campos do relatório (ex: "TG INT", "LOC ANT")
-        em vez de assumir numeração "Campo 1, Campo 2...".
-      - Parsing por seções: identifica cabeçalhos como "Energia", "MU", "Dose",
-        "SSD", etc. e extrai os valores linha a linha.
-      - Filtra automaticamente campos de setup ("Setup field") e campos com
-        UM abaixo do limiar configurável (mu_threshold).
-      - Detecta Aparelho/Energia tanto em português quanto em inglês.
+@st.cache_data(show_spinner=False, ttl=3600)
+def obter_tabela_github(url):
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req) as r:
+        return r.read().decode("utf-8")
 
-    Parâmetros
-    ----------
-    pdf_file : str ou file-like
-        Caminho ou objeto de arquivo do PDF do Eclipse.
-    mu_threshold : float
-        Limiar mínimo de UM para incluir um campo nos resultados.
-        Campos com UM < mu_threshold são descartados. Default: 50.
+def calcular_todos_campos(df_edit, dose_ref, dict_filtros):
+    """Calcula todos os campos e retorna (df_resultado, erro_msg)."""
+    resultados = []
+    for _, row in df_edit.iterrows():
+        url_maq = identificar_url_maquina(row["Aparelho"], row["Energia"])
+        try:
+            texto_maq = obter_tabela_github(url_maq)
+            campos_m, sc_m, sp_m, prof_m, tmr_m, dmax = carregar_tabelas_maquina(texto_maq)
+            df_linha = pd.DataFrame([row])
+            res = processar_calculos_tabela(df_linha, campos_m, sc_m, sp_m, prof_m, tmr_m, dmax, dose_ref, dict_filtros)
+            resultados.append(res)
+        except Exception as e:
+            return None, f"Erro no campo {row['Campo']}: {e}"
+    if resultados:
+        return pd.concat(resultados, ignore_index=True), None
+    return None, "Nenhum resultado calculado."
 
-    Retorna
-    -------
-    dict com chaves:
-        "df"   : pd.DataFrame com os dados paramétricos dos campos aceitos.
-        "nome" : str — nome do paciente.
-        "id"   : str — matrícula / ID do paciente.
-    """
-    texto_completo = ""
-    with pdfplumber.open(pdf_file) as pdf:
-        for page in pdf.pages:
-            texto_completo += (page.extract_text() or "") + "\n"
+# ══════════════════════════════════════════════════════════════════════════════
+# CONFIGURAÇÃO DA PÁGINA
+# ══════════════════════════════════════════════════════════════════════════════
+st.set_page_config(
+    page_title="Verificação de UM",
+    page_icon="🔬",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 1. DADOS DO PACIENTE E PLANO
-    # ══════════════════════════════════════════════════════════════════════
-    match_nome = re.search(r"Nome do Paciente:\s*(.+)", texto_completo, re.IGNORECASE)
-    nome_pac = match_nome.group(1).strip() if match_nome else ""
+# ── CSS ──
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
 
-    match_id = re.search(r"(?:Matricula|ID|Patient ID):\s*(.+)", texto_completo, re.IGNORECASE)
-    id_pac = match_id.group(1).strip() if match_id else ""
+    .block-container { max-width: 1100px; padding-top: 2rem; }
 
-    match_plano = re.search(r"(?:Plano|Plan):\s*(.+)", texto_completo, re.IGNORECASE)
-    nome_plano = match_plano.group(1).strip() if match_plano else ""
-
-    # ══════════════════════════════════════════════════════════════════════
-    # 2. APARELHO E ENERGIA (detecção PT + EN)
-    # ══════════════════════════════════════════════════════════════════════
-    aparelho_default = "Clinac"
-    energia_default = "6X"
-    match_machine = re.search(
-        r"(?:Unidade de tratamento|Treatment unit):\s*([^,]+),\s*(?:energia|energy):\s*(\S+)",
-        texto_completo, re.IGNORECASE,
-    )
-    if match_machine:
-        aparelho_default = match_machine.group(1).strip()
-        energia_default = match_machine.group(2).strip()
-
-    # ══════════════════════════════════════════════════════════════════════
-    # 3. PARSING POR SEÇÕES
-    # ══════════════════════════════════════════════════════════════════════
-    lines = texto_completo.split("\n")
-
-    # Cabeçalhos reconhecidos (PT e EN). A ordem importa para evitar
-    # que "Profundidade" capture antes de "Profundidade Efetiva".
-    SECTION_HEADERS = [
-        "Energia", "Energy",
-        "Tamanho do Campo Aberto X", "Open Field Size X",
-        "Tamanho do Campo Aberto Y", "Open Field Size Y",
-        "Jaw Y1", "Jaw Y2", "Jaw X1", "Jaw X2",
-        "Filtro", "Filter",
-        "MU",
-        "Dose",
-        "SSD",
-        "Profundidade Efetiva", "Effective Depth",
-        "Profundidade", "Depth",
-    ]
-
-    current_section = None
-    section_data: dict[str, list[str]] = {}
-
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-
-        # Verifica se a linha é um cabeçalho de seção
-        matched_header = None
-        for h in SECTION_HEADERS:
-            if stripped == h:
-                matched_header = h
-                break
-
-        if matched_header:
-            current_section = matched_header
-            section_data.setdefault(current_section, [])
-            continue
-
-        # Linhas "Campo ..." dentro de uma seção ativa
-        if current_section and (stripped.startswith("Campo ") or stripped.startswith("Field ")):
-            section_data[current_section].append(stripped)
-        elif current_section and stripped.startswith(("Informações", "Information")):
-            current_section = None  # fim das seções paramétricas
-
-    # ══════════════════════════════════════════════════════════════════════
-    # 4. DESCOBRIR NOMES DOS CAMPOS (seção "Energia")
-    # ══════════════════════════════════════════════════════════════════════
-    field_names: list[str] = []
-    field_energies: dict[str, str] = {}
-
-    energia_key = "Energia" if "Energia" in section_data else "Energy"
-    for line in section_data.get(energia_key, []):
-        m = re.match(
-            r"(?:Campo|Field)\s+(.+?)\s+([\dXx]+(?:MV|MeV|X|E)?)\s*$",
-            line.strip(), re.IGNORECASE,
-        )
-        if m:
-            name = m.group(1).strip()
-            energy = m.group(2).strip()
-            field_names.append(name)
-            field_energies[name] = energy
-
-    if not field_names:
-        return {"df": pd.DataFrame(), "nome": nome_pac, "id": id_pac}
-
-    # ══════════════════════════════════════════════════════════════════════
-    # 5. FUNÇÕES AUXILIARES
-    # ══════════════════════════════════════════════════════════════════════
-    def _extract_value_for_field(line: str, field_name: str):
-        """Retorna a parte do valor após 'Campo <field_name> <valor> [unidade]'."""
-        pattern = rf"(?:Campo|Field)\s+{re.escape(field_name)}\s+(.*?)$"
-        m = re.match(pattern, line.strip())
-        return m.group(1).strip() if m else None
-
-    def _parse_numeric(val_str: str) -> float:
-        """Extrai valor numérico de strings como '132 MU', '121.6 cGy', '+7.6 cm'."""
-        if not val_str:
-            return 0.0
-        m = re.search(r"[+-]?([\d.]+)", val_str)
-        return float(m.group(0)) if m else 0.0
-
-    def _build_section_map(section_key: str) -> dict[str, str]:
-        """Retorna {field_name: raw_value_string} para uma seção."""
-        result = {}
-        for line in section_data.get(section_key, []):
-            # Testa cada nome de campo (mais longo primeiro para evitar match parcial)
-            for fn in sorted(field_names, key=len, reverse=True):
-                val = _extract_value_for_field(line, fn)
-                if val is not None and fn not in result:
-                    result[fn] = val
-                    break
-        return result
-
-    # ══════════════════════════════════════════════════════════════════════
-    # 6. MAPEAR VALORES POR SEÇÃO
-    # ══════════════════════════════════════════════════════════════════════
-    sec = {
-        "X":      _build_section_map("Tamanho do Campo Aberto X") or _build_section_map("Open Field Size X"),
-        "Y":      _build_section_map("Tamanho do Campo Aberto Y") or _build_section_map("Open Field Size Y"),
-        "MU":     _build_section_map("MU"),
-        "Dose":   _build_section_map("Dose"),
-        "SSD":    _build_section_map("SSD"),
-        "Prof":   _build_section_map("Profundidade") or _build_section_map("Depth"),
-        "ProfEf": _build_section_map("Profundidade Efetiva") or _build_section_map("Effective Depth"),
-        "Filtro": _build_section_map("Filtro") or _build_section_map("Filter"),
+    .app-header {
+        text-align: center;
+        padding: 1.2rem 0 0.3rem;
+    }
+    .app-header h1 {
+        font-family: 'DM Sans', sans-serif;
+        font-weight: 700;
+        font-size: 1.5rem;
+        color: #1a365d;
+        margin-bottom: 0.2rem;
+        letter-spacing: -0.02em;
+    }
+    .app-header p {
+        font-family: 'DM Sans', sans-serif;
+        color: #718096;
+        font-size: 0.85rem;
+        margin: 0;
     }
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 7. Fsx / Fsy (a partir dos blocos "Informações" de fluência)
-    # ══════════════════════════════════════════════════════════════════════
-    padrao_fs = (
-        r"(?:fluência total|total fluence).{0,100}?"
-        r"fsx\s*=\s*([\d.]+)\s*mm"
-        r"(?:.{0,50}?fsy\s*=\s*([\d.]+)\s*mm)?"
-    )
-    matches_fs = re.findall(padrao_fs, texto_completo, re.IGNORECASE | re.DOTALL)
+    .info-strip {
+        background: linear-gradient(135deg, #ebf4ff 0%, #f0f7ff 100%);
+        border: 1px solid #bee3f8;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        margin: 0.5rem 0;
+        font-family: 'DM Sans', sans-serif;
+    }
+    .info-strip .label {
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #4a5568;
+        font-weight: 500;
+    }
+    .info-strip .value {
+        font-size: 0.92rem;
+        color: #1a365d;
+        font-weight: 700;
+    }
 
-    # ══════════════════════════════════════════════════════════════════════
-    # 8. MONTAR DataFrame FINAL (com filtro de threshold)
-    # ══════════════════════════════════════════════════════════════════════
-    dados_campos = {}
-    fs_idx = 0  # índice nas correspondências de fluência
+    .result-ok   { display:inline-block; background:#c6f6d5; color:#22543d; padding:0.12rem 0.55rem; border-radius:99px; font-size:0.76rem; font-weight:600; }
+    .result-warn { display:inline-block; background:#fefcbf; color:#744210; padding:0.12rem 0.55rem; border-radius:99px; font-size:0.76rem; font-weight:600; }
+    .result-fail { display:inline-block; background:#fed7d7; color:#742a2a; padding:0.12rem 0.55rem; border-radius:99px; font-size:0.76rem; font-weight:600; }
 
-    for fn in field_names:
-        mu_str = sec["MU"].get(fn, "")
+    .soft-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, #e2e8f0 20%, #e2e8f0 80%, transparent);
+        margin: 0.8rem 0;
+    }
 
-        # Ignorar campos de setup
-        if "setup" in mu_str.lower() or not mu_str:
-            continue
+    section[data-testid="stSidebar"] { background: #f7fafc; }
+    footer { visibility: hidden; }
+</style>
+""", unsafe_allow_html=True)
 
-        mu_val = _parse_numeric(mu_str)
+# ══════════════════════════════════════════════════════════════════════════════
+# SIDEBAR — Configurações avançadas (colapsado por padrão)
+# ══════════════════════════════════════════════════════════════════════════════
+with st.sidebar:
+    st.markdown("#### ⚙️ Configurações")
+    instituicao = st.text_input("Instituição", value="", placeholder="Opcional")
+    dose_ref = st.number_input("Fator de Calibração (cGy/UM)", value=1.000, step=0.01, format="%.3f")
+    mu_threshold = st.number_input("Limiar mínimo de UM", value=50, min_value=0, step=10,
+        help="Campos com UM abaixo deste valor são descartados.")
+    st.markdown("---")
+    st.caption("Fatores de Bandeja / Filtro")
+    df_filtros_default = pd.DataFrame([
+        {"Filtro": "Nenhum", "Fator": 1.000},
+        {"Filtro": "EDW", "Fator": 1.000},
+        {"Filtro": "Acrílico", "Fator": 0.970},
+    ])
+    df_filtros_edit = st.data_editor(df_filtros_default, num_rows="dynamic", hide_index=True, use_container_width=True)
+    dict_filtros = dict(zip(df_filtros_edit["Filtro"], df_filtros_edit["Fator"]))
 
-        # Ler Fsx/Fsy (consumir o match mesmo se o campo for filtrado)
-        fsx, fsy = 0.0, 0.0
-        if fs_idx < len(matches_fs):
-            fsx = float(matches_fs[fs_idx][0]) / 10.0
-            fsy = float(matches_fs[fs_idx][1] or matches_fs[fs_idx][0]) / 10.0
-            fs_idx += 1
+# ══════════════════════════════════════════════════════════════════════════════
+# HEADER
+# ══════════════════════════════════════════════════════════════════════════════
+st.markdown("""
+<div class="app-header">
+    <h1>🔬 Verificação Independente de Unidades Monitor</h1>
+    <p>Importe o relatório do Eclipse · Cálculo automático · Preview do relatório</p>
+</div>
+""", unsafe_allow_html=True)
 
-        # Aplicar threshold de UM
-        if mu_val < mu_threshold:
-            continue
+st.markdown('<div class="soft-divider"></div>', unsafe_allow_html=True)
 
-        # Filtro/wedge
-        filtro_raw = sec["Filtro"].get(fn, "-")
-        filtro = "Nenhum" if (not filtro_raw or filtro_raw == "-") else filtro_raw
+# ══════════════════════════════════════════════════════════════════════════════
+# UPLOAD
+# ══════════════════════════════════════════════════════════════════════════════
+pdf_files = st.file_uploader(
+    "Arraste o(s) relatório(s) PDF do Eclipse",
+    type=["pdf"],
+    accept_multiple_files=True,
+)
 
-        dados_campos[fn] = {
-            "Plano": nome_plano,
-            "Campo": fn,
-            "Aparelho": aparelho_default,
-            "Energia": field_energies.get(fn, energia_default),
-            "X": _parse_numeric(sec["X"].get(fn, "")),
-            "Y": _parse_numeric(sec["Y"].get(fn, "")),
-            "Fsx (cm)": fsx,
-            "Fsy (cm)": fsy,
-            "FILTRO": filtro,
-            "OAR": 1.000,
-            "UM (Eclipse)": mu_val,
-            "DOSE (cGy)": _parse_numeric(sec["Dose"].get(fn, "")),
-            "SSD": _parse_numeric(sec["SSD"].get(fn, "")),
-            "Prof.": _parse_numeric(sec["Prof"].get(fn, "")),
-            "Prof. Ef.": _parse_numeric(sec["ProfEf"].get(fn, "")),
-        }
+if not pdf_files:
+    st.markdown("""
+    <div style="text-align:center; padding: 3rem 1rem; color: #a0aec0;">
+        <p style="font-size: 2.2rem; margin-bottom: 0.4rem;">📄</p>
+        <p style="font-family: 'DM Sans', sans-serif; font-size: 0.92rem;">
+            Arraste um ou mais PDFs do Eclipse acima para começar
+        </p>
+        <p style="font-family: 'DM Sans', sans-serif; font-size: 0.76rem; color: #cbd5e0;">
+            Configurações avançadas na barra lateral (☰)
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
 
-    df = pd.DataFrame(dados_campos.values()) if dados_campos else pd.DataFrame()
-    return {"df": df, "nome": nome_pac, "id": id_pac}
+# ══════════════════════════════════════════════════════════════════════════════
+# PROCESSAMENTO AUTOMÁTICO
+# ══════════════════════════════════════════════════════════════════════════════
+with st.spinner("Extraindo dados e calculando..."):
+    dfs_extraidos = []
+    nome_paciente, id_paciente, nome_plano = "", "", ""
+
+    for pdf_file in pdf_files:
+        dados = extrair_dados_rt(pdf_file, mu_threshold=mu_threshold)
+        if not dados["df"].empty:
+            dfs_extraidos.append(dados["df"])
+        if dados["nome"]: nome_paciente = dados["nome"]
+        if dados["id"]: id_paciente = dados["id"]
+
+    if not dfs_extraidos:
+        st.error(f"Nenhum campo com UM ≥ {mu_threshold} encontrado. Verifique o PDF ou ajuste o limiar na barra lateral.")
+        st.stop()
+
+    df_paciente = pd.concat(dfs_extraidos, ignore_index=True)
+    planos_unicos = [str(p) for p in df_paciente["Plano"].unique() if p]
+    nome_plano = " + ".join(planos_unicos) if planos_unicos else "Plano"
+
+    # Desambiguar nomes duplicados
+    contagem = df_paciente["Campo"].value_counts()
+    for idx in df_paciente.index:
+        if df_paciente.loc[idx, "Campo"] in contagem[contagem > 1].index:
+            pl = df_paciente.loc[idx, "Plano"]
+            df_paciente.loc[idx, "Campo"] = f"{df_paciente.loc[idx, 'Campo']} ({pl})"
+    sufixos = df_paciente.groupby("Campo").cumcount()
+    df_paciente["Campo"] = df_paciente["Campo"].astype(str) + sufixos.apply(lambda x: f" #{x+1}" if x > 0 else "")
+
+    data_calc = date.today()
+    df_res, erro = calcular_todos_campos(df_paciente, dose_ref, dict_filtros)
+
+if erro:
+    st.error(erro)
+    st.stop()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESUMO (info strip compacto)
+# ══════════════════════════════════════════════════════════════════════════════
+num_campos = len(df_res)
+desvios = df_res["Desvio_num"].abs()
+max_desvio = desvios.max()
+
+cols = st.columns([2.2, 1.5, 1.2, 1.5])
+with cols[0]:
+    st.markdown(f"""<div class="info-strip">
+        <span class="label">Paciente</span><br>
+        <span class="value">{nome_paciente or 'N/A'}</span>
+        <span style="color:#a0aec0; font-size:0.78rem; margin-left:0.6rem;">ID {id_paciente or '—'}</span>
+    </div>""", unsafe_allow_html=True)
+with cols[1]:
+    st.markdown(f"""<div class="info-strip">
+        <span class="label">Plano</span><br>
+        <span class="value">{nome_plano}</span>
+    </div>""", unsafe_allow_html=True)
+with cols[2]:
+    st.markdown(f"""<div class="info-strip">
+        <span class="label">Campos</span><br>
+        <span class="value">{num_campos}</span>
+    </div>""", unsafe_allow_html=True)
+with cols[3]:
+    if max_desvio <= 3.0:
+        badge = '<span class="result-ok">✓ OK</span>'
+    elif max_desvio <= 5.0:
+        badge = '<span class="result-warn">⚠ Atenção</span>'
+    else:
+        badge = '<span class="result-fail">✗ Fora</span>'
+    st.markdown(f"""<div class="info-strip">
+        <span class="label">Concordância</span><br>
+        {badge}
+        <span style="font-size:0.76rem; color:#718096; margin-left:0.3rem;">máx {max_desvio:.1f}%</span>
+    </div>""", unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TABELA DE PARÂMETROS (colapsada)
+# ══════════════════════════════════════════════════════════════════════════════
+with st.expander("📊 Ver parâmetros calculados", expanded=False):
+    st.dataframe(df_res.copy().set_index("Campo").T, use_container_width=True)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GERAR PDF + PREVIEW HTML
+# ══════════════════════════════════════════════════════════════════════════════
+pdf_buf = gerar_pdf_transposto(
+    df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, instituicao=instituicao
+)
+pdf_bytes = pdf_buf.getvalue()
+
+st.markdown('<div class="soft-divider"></div>', unsafe_allow_html=True)
+
+nome_arq = f"verificacao_{id_paciente or 'paciente'}.pdf"
+st.download_button(
+    label="⬇️  Descarregar Relatório PDF",
+    data=pdf_bytes,
+    file_name=nome_arq,
+    mime="application/pdf",
+    type="primary",
+    use_container_width=True,
+)
+
+# ── Preview HTML do relatório (funciona em todos os navegadores) ──
+parametros_preview = [
+    ("Aparelho",                       "Aparelho",      "s"),
+    ("Energia",                        "Energia",       "s"),
+    ("Campo X (cm)",                   "X",             ".1f"),
+    ("Campo Y (cm)",                   "Y",             ".1f"),
+    ("Eq. Colimador (cm)",             "EqSq Colimador",".2f"),
+    ("Eq. Fantoma (cm)",               "EqSq Fantoma",  ".2f"),
+    ("SSD (cm)",                       "SSD",           ".1f"),
+    ("Dose (cGy)",                     "DOSE (cGy)",    ".1f"),
+    ("Profundidade (cm)",              "Prof.",         ".2f"),
+    ("Prof. Efetiva (cm)",             "Prof. Ef.",     ".2f"),
+    ("TMR",                            "TMR",           ".4f"),
+    ("Sc",                             "Sc",            ".4f"),
+    ("Sp",                             "Sp",            ".4f"),
+    ("Fator Filtro",                   "Fator Filtro",  ".3f"),
+    ("OAR",                            "OAR",           ".3f"),
+    ("Fator Distância",                "ISQF",          ".4f"),
+    ("UM Calculada",                   "UM Calculada",  ".1f"),
+    ("UM Eclipse",                     "UM (Eclipse)",  ".0f"),
+    ("Desvio (%)",                     "Desvio_num",    "+.2f"),
+]
+
+campos = list(df_res["Campo"])
+n = len(campos)
+
+# Header
+header_cells = '<th style="text-align:left;padding:6px 10px;font-size:12px;color:#fff;background:#005088;white-space:nowrap;">Parâmetro</th>'
+for c in campos:
+    header_cells += f'<th style="text-align:center;padding:6px 8px;font-size:11px;color:#fff;background:#005088;white-space:nowrap;">{c}</th>'
+
+# Rows
+rows_html = ""
+for i, (label, col, fmt) in enumerate(parametros_preview):
+    bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
+    row = f'<td style="padding:5px 10px;font-size:12px;font-weight:600;color:#2d3748;background:{bg};white-space:nowrap;">{label}</td>'
+    for _, r in df_res.iterrows():
+        val = r[col]
+        if fmt == "s":
+            cell_text = str(val)
+        else:
+            cell_text = f"{val:{fmt}}"
+            if col == "Desvio_num":
+                cell_text += "%"
+
+        # Cor do desvio
+        cell_style = f"text-align:center;padding:5px 8px;font-size:12px;background:{bg};"
+        if col == "Desvio_num":
+            d = abs(float(val))
+            if d <= 2:
+                cell_style += "color:#22543d;font-weight:700;"
+            elif d <= 5:
+                cell_style += "color:#744210;font-weight:700;"
+            else:
+                cell_style += "color:#c53030;font-weight:700;"
+        else:
+            cell_style += "color:#4a5568;"
+
+        row += f'<td style="{cell_style}">{cell_text}</td>'
+    rows_html += f"<tr>{row}</tr>"
+
+preview_html = f"""
+<div style="
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+    margin: 0.8rem 0;
+    background: #fff;
+">
+    <!-- Cabeçalho do relatório -->
+    <div style="padding: 16px 20px 12px; border-bottom: 2px solid #00c896;">
+        <div style="text-align:center;">
+            {'<p style="font-size:13px;font-weight:700;color:#005088;margin:0 0 2px;">' + instituicao + '</p>' if instituicao else ''}
+            <p style="font-size:15px;font-weight:700;color:#005088;margin:0 0 4px;letter-spacing:-0.01em;">
+                Verificação Independente de Unidades Monitor
+            </p>
+            <p style="font-size:11px;color:#718096;margin:0;">
+                Fator de Calibração: {dose_ref:.3f} cGy/UM &nbsp;|&nbsp; SAD: 100.0 cm
+            </p>
+        </div>
+    </div>
+
+    <!-- Info do paciente -->
+    <div style="padding: 10px 20px; font-size:12px; color:#4a5568; display:flex; gap:24px; flex-wrap:wrap; border-bottom:1px solid #f0f0f0;">
+        <span><b style="color:#2d3748;">Paciente:</b> {nome_paciente or 'N/A'}</span>
+        <span><b style="color:#2d3748;">ID:</b> {id_paciente or 'N/A'}</span>
+        <span><b style="color:#2d3748;">Plano:</b> {nome_plano or 'N/A'}</span>
+        <span><b style="color:#2d3748;">Data:</b> {data_calc.strftime('%d/%m/%Y')}</span>
+    </div>
+
+    <!-- Tabela transposta -->
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-family:'DM Sans',system-ui,sans-serif;">
+            <thead><tr>{header_cells}</tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+    </div>
+
+    <!-- Rodapé -->
+    <div style="padding:12px 20px; border-top:1px solid #f0f0f0; display:flex; justify-content:space-around; color:#a0aec0; font-size:11px;">
+        <span>___________________________<br><span style="font-size:10px;">Físico Médico Responsável</span></span>
+        <span>___________________________<br><span style="font-size:10px;">Data da Revisão</span></span>
+    </div>
+</div>
+"""
+
+st.markdown(preview_html, unsafe_allow_html=True)
+st.caption("Preview do relatório · O PDF oficial para impressão está no botão acima.")
