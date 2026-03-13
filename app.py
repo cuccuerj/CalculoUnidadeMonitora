@@ -3,7 +3,7 @@ import pandas as pd
 import urllib.request
 from datetime import date
 
-# Importação dos seus módulos (certifique-se de que as pastas core e utils existem)
+# Importação dos seus módulos
 from core.pdf_parser import extrair_dados_rt
 from core.math import carregar_tabelas_maquina, processar_calculos_tabela
 from utils.report_gen import gerar_pdf_transposto
@@ -14,7 +14,7 @@ from utils.report_gen import gerar_pdf_transposto
 def identificar_url_maquina(aparelho, energia):
     a = str(aparelho).upper()
     e = str(energia).upper()
-    
+
     if "UNIQUE" in a:
         return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/unique_fac_tmr.txt"
     elif "2100" in a:
@@ -22,7 +22,7 @@ def identificar_url_maquina(aparelho, energia):
             return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_10mv_fac_tmr.txt"
         else:
             return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_6mv_fac_tmr.txt"
-            
+
     return "https://raw.githubusercontent.com/cuccuerj/CalculoUnidadeMonitora/main/cl2100_6mv_fac_tmr.txt"
 
 @st.cache_data(show_spinner=False, ttl=3600)
@@ -44,13 +44,21 @@ st.markdown("Sistema de conferência paramétrica para radioterapia 3D. A tabela
 st.divider()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BARRA LATERAL (Apenas Configurações Fixas)
+# BARRA LATERAL
 # ══════════════════════════════════════════════════════════════════════════════
 with st.sidebar:
     st.subheader("Configurações do Serviço")
     instituicao = st.text_input("Instituição (Opcional)")
     dose_ref = st.number_input("Fator de Calibração (cGy/UM)", value=1.000, step=0.01, format="%.3f")
-    
+
+    st.markdown("---")
+    st.caption("Filtro de Campos")
+    mu_threshold = st.number_input(
+        "Limiar mínimo de UM",
+        value=50, min_value=0, step=10,
+        help="Campos com UM abaixo deste valor são descartados automaticamente (setup fields, sub-campos pequenos)."
+    )
+
     st.markdown("---")
     st.caption("Fatores de Bandeja/Filtro")
     df_filtros_default = pd.DataFrame([
@@ -73,39 +81,42 @@ nome_plano = "Múltiplos Planos"
 if pdf_files:
     with st.spinner(f"A processar {len(pdf_files)} documento(s) e a extrair os dados..."):
         dfs_extraidos = []
-        
+
         for pdf_file in pdf_files:
-            dados = extrair_dados_rt(pdf_file)
-            
+            dados = extrair_dados_rt(pdf_file, mu_threshold=mu_threshold)
+
             if not dados["df"].empty:
                 dfs_extraidos.append(dados["df"])
-            
+
             if dados["nome"]: st.session_state["nome_paciente"] = dados["nome"]
             if dados["id"]: st.session_state["id_paciente"] = dados["id"]
-            
+
         if dfs_extraidos:
             df_paciente = pd.concat(dfs_extraidos, ignore_index=True)
-            
+
             # Formatar nomes dos planos
             planos_unicos = [str(p) for p in df_paciente["Plano"].unique() if p]
             nome_plano = " + ".join(planos_unicos) if planos_unicos else "Plano Manual"
-            
-            # Adicionar o nome do plano aos campos duplicados (Ex: Campo 1 (Mama))
+
+            # Para múltiplos PDFs: adicionar plano ao nome se houver campos duplicados
             contagem = df_paciente["Campo"].value_counts()
             campos_repetidos = contagem[contagem > 1].index
-            
+
             for idx in df_paciente.index:
                 if df_paciente.loc[idx, "Campo"] in campos_repetidos:
                     plano_atual = df_paciente.loc[idx, "Plano"]
                     df_paciente.loc[idx, "Campo"] = f"{df_paciente.loc[idx, 'Campo']} ({plano_atual})"
-            
-            # Proteção contra falhas visuais do Streamlit
+
+            # Proteção contra nomes duplicados residuais (Streamlit data_editor)
             sufixos = df_paciente.groupby("Campo").cumcount()
             df_paciente["Campo"] = df_paciente["Campo"].astype(str) + sufixos.apply(lambda x: f" - Cópia {x}" if x > 0 else "")
-            
+
         else:
-            # ---> SE O PDF ESTIVER VAZIO, ISTO VAI AVISAR NA TELA <---
-            st.warning("⚠️ **Nenhum campo foi encontrado nestes ficheiros.** Verifique se os relatórios são do Eclipse, se contêm a palavra 'Campo' e se o PDF não é uma imagem digitalizada.")
+            st.warning(
+                "⚠️ **Nenhum campo foi encontrado nestes ficheiros** "
+                f"(limiar de UM = {mu_threshold}). "
+                "Verifique se os relatórios são do Eclipse e se contêm campos com UM suficiente."
+            )
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PASSO 2: REVISÃO E CÁLCULO
@@ -122,40 +133,40 @@ if not df_paciente.empty:
 
     st.write("")
     st.subheader("2. Resultados da Conferência")
-    
+
     if st.button("Calcular Parâmetros e Gerar Relatório", type="primary", use_container_width=True):
-        
+
         resultados_finais = []
         houve_erro = False
-        
+
         with st.spinner("A calcular campos usando as tabelas TMR específicas..."):
             for index, row in df_edit.iterrows():
                 url_maq = identificar_url_maquina(row["Aparelho"], row["Energia"])
-                
+
                 try:
                     texto_maq = obter_tabela_github(url_maq)
                     campos_m, sc_m, sp_m, prof_m, tmr_m, dmax = carregar_tabelas_maquina(texto_maq)
-                    
+
                     df_linha = pd.DataFrame([row])
                     res_linha = processar_calculos_tabela(df_linha, campos_m, sc_m, sp_m, prof_m, tmr_m, dmax, dose_ref, dict_filtros)
                     resultados_finais.append(res_linha)
-                    
+
                 except Exception as e:
                     st.error(f"Erro ao carregar a tabela para o {row['Campo']} ({row['Aparelho']} - {row['Energia']}). Verifique a ligação.")
                     houve_erro = True
                     break
-        
+
         if not houve_erro and resultados_finais:
             df_res = pd.concat(resultados_finais, ignore_index=True)
-            
-            # Mostrar no ecrã 
+
+            # Mostrar no ecrã
             st.dataframe(df_res.copy().set_index("Campo").T, use_container_width=True)
-            
+
             # Gerar PDF
             pdf_buf = gerar_pdf_transposto(
                 df_res, nome_paciente, id_paciente, nome_plano, data_calc, dose_ref, instituicao=instituicao
             )
-            
+
             nome_arq = f"verificacao_{id_paciente or 'paciente'}.pdf"
             st.download_button(
                 label="⬇️ Descarregar Relatório PDF Oficial",
