@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import urllib.request
 from datetime import date
@@ -272,112 +273,121 @@ st.download_button(
     use_container_width=True,
 )
 
-# ── Preview HTML do relatório (funciona em todos os navegadores) ──
-parametros_preview = [
-    ("Aparelho",                       "Aparelho",      "s"),
-    ("Energia",                        "Energia",       "s"),
-    ("Campo X (cm)",                   "X",             ".1f"),
-    ("Campo Y (cm)",                   "Y",             ".1f"),
-    ("Eq. Colimador (cm)",             "EqSq Colimador",".2f"),
-    ("Eq. Fantoma (cm)",               "EqSq Fantoma",  ".2f"),
-    ("SSD (cm)",                       "SSD",           ".1f"),
-    ("Dose (cGy)",                     "DOSE (cGy)",    ".1f"),
-    ("Profundidade (cm)",              "Prof.",         ".2f"),
-    ("Prof. Efetiva (cm)",             "Prof. Ef.",     ".2f"),
-    ("TMR",                            "TMR",           ".4f"),
-    ("Sc",                             "Sc",            ".4f"),
-    ("Sp",                             "Sp",            ".4f"),
-    ("Fator Filtro",                   "Fator Filtro",  ".3f"),
-    ("OAR",                            "OAR",           ".3f"),
-    ("Fator Distância",                "ISQF",          ".4f"),
-    ("UM Calculada",                   "UM Calculada",  ".1f"),
-    ("UM Eclipse",                     "UM (Eclipse)",  ".0f"),
-    ("Desvio (%)",                     "Desvio_num",    "+.2f"),
-]
-
-campos = list(df_res["Campo"])
-n = len(campos)
+# ── Preview HTML do relatório ──
+preview_html = []
+preview_html.append("""<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #fff; }
+  .card { border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; box-shadow:0 2px 12px rgba(0,0,0,0.04); }
+  .header { padding:16px 20px 12px; border-bottom:2px solid #00c896; text-align:center; }
+  .header h1 { font-size:15px; font-weight:700; color:#005088; margin:0 0 4px; }
+  .header p { font-size:11px; color:#718096; }
+  .info { padding:10px 20px; font-size:12px; color:#4a5568; display:flex; gap:24px; flex-wrap:wrap; border-bottom:1px solid #f0f0f0; }
+  .info b { color:#2d3748; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:center; padding:6px 8px; font-size:11px; color:#fff; background:#005088; white-space:nowrap; }
+  th:first-child { text-align:left; padding:6px 10px; font-size:12px; }
+  td { padding:5px 8px; font-size:12px; text-align:center; color:#4a5568; }
+  td:first-child { text-align:left; padding:5px 10px; font-weight:600; color:#2d3748; white-space:nowrap; }
+  tr:nth-child(odd) td { background:#f8fafc; }
+  tr:nth-child(even) td { background:#fff; }
+  .dev-ok { color:#22543d; font-weight:700; }
+  .dev-warn { color:#744210; font-weight:700; }
+  .dev-fail { color:#c53030; font-weight:700; }
+  .footer { padding:12px 20px; border-top:1px solid #f0f0f0; display:flex; justify-content:space-around; color:#a0aec0; font-size:11px; text-align:center; }
+</style></head><body><div class="card">""")
 
 # Header
-header_cells = '<th style="text-align:left;padding:6px 10px;font-size:12px;color:#fff;background:#005088;white-space:nowrap;">Parâmetro</th>'
-for c in campos:
-    header_cells += f'<th style="text-align:center;padding:6px 8px;font-size:11px;color:#fff;background:#005088;white-space:nowrap;">{c}</th>'
+inst_line = f'<p style="font-size:13px;font-weight:700;color:#005088;margin:0 0 2px;">{instituicao}</p>' if instituicao else ''
+preview_html.append(f"""
+<div class="header">
+  {inst_line}
+  <h1>Verificação Independente de Unidades Monitor</h1>
+  <p>Fator de Calibração: {dose_ref:.3f} cGy/UM &nbsp;|&nbsp; SAD: 100.0 cm</p>
+</div>""")
 
-# Rows
-rows_html = ""
-for i, (label, col, fmt) in enumerate(parametros_preview):
-    bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
-    row = f'<td style="padding:5px 10px;font-size:12px;font-weight:600;color:#2d3748;background:{bg};white-space:nowrap;">{label}</td>'
+# Patient info
+preview_html.append(f"""
+<div class="info">
+  <span><b>Paciente:</b> {nome_paciente or 'N/A'}</span>
+  <span><b>ID:</b> {id_paciente or 'N/A'}</span>
+  <span><b>Plano:</b> {nome_plano or 'N/A'}</span>
+  <span><b>Data:</b> {data_calc.strftime('%d/%m/%Y')}</span>
+</div>""")
+
+# Table
+campos = list(df_res["Campo"])
+header_ths = '<th>Parâmetro</th>'
+for c in campos:
+    header_ths += f'<th>{c}</th>'
+
+parametros_preview = [
+    ("Aparelho",            "Aparelho",       "s"),
+    ("Energia",             "Energia",        "s"),
+    ("Campo X (cm)",        "X",              ".1f"),
+    ("Campo Y (cm)",        "Y",              ".1f"),
+    ("Eq. Colimador (cm)",  "EqSq Colimador", ".2f"),
+    ("Eq. Fantoma (cm)",    "EqSq Fantoma",   ".2f"),
+    ("SSD (cm)",            "SSD",            ".1f"),
+    ("Dose (cGy)",          "DOSE (cGy)",     ".1f"),
+    ("Profundidade (cm)",   "Prof.",          ".2f"),
+    ("Prof. Efetiva (cm)",  "Prof. Ef.",      ".2f"),
+    ("TMR",                 "TMR",            ".4f"),
+    ("Sc",                  "Sc",             ".4f"),
+    ("Sp",                  "Sp",             ".4f"),
+    ("Fator Filtro",        "Fator Filtro",   ".3f"),
+    ("OAR",                 "OAR",            ".3f"),
+    ("Fator Distância",     "ISQF",           ".4f"),
+    ("UM Calculada",        "UM Calculada",   ".1f"),
+    ("UM Eclipse",          "UM (Eclipse)",   ".0f"),
+    ("Desvio (%)",          "Desvio_num",     "+.2f"),
+]
+
+rows_str = ""
+for label, col, fmt in parametros_preview:
+    tds = f"<td>{label}</td>"
     for _, r in df_res.iterrows():
         val = r[col]
         if fmt == "s":
-            cell_text = str(val)
+            cell = str(val)
+            css_class = ""
         else:
-            cell_text = f"{val:{fmt}}"
+            cell = f"{val:{fmt}}"
+            css_class = ""
             if col == "Desvio_num":
-                cell_text += "%"
+                cell += "%"
+                d = abs(float(val))
+                if d <= 2:
+                    css_class = ' class="dev-ok"'
+                elif d <= 5:
+                    css_class = ' class="dev-warn"'
+                else:
+                    css_class = ' class="dev-fail"'
+        tds += f"<td{css_class}>{cell}</td>"
+    rows_str += f"<tr>{tds}</tr>\n"
 
-        # Cor do desvio
-        cell_style = f"text-align:center;padding:5px 8px;font-size:12px;background:{bg};"
-        if col == "Desvio_num":
-            d = abs(float(val))
-            if d <= 2:
-                cell_style += "color:#22543d;font-weight:700;"
-            elif d <= 5:
-                cell_style += "color:#744210;font-weight:700;"
-            else:
-                cell_style += "color:#c53030;font-weight:700;"
-        else:
-            cell_style += "color:#4a5568;"
+preview_html.append(f"""
+<div style="overflow-x:auto;">
+  <table>
+    <thead><tr>{header_ths}</tr></thead>
+    <tbody>{rows_str}</tbody>
+  </table>
+</div>""")
 
-        row += f'<td style="{cell_style}">{cell_text}</td>'
-    rows_html += f"<tr>{row}</tr>"
-
-preview_html = f"""
-<div style="
-    border: 1px solid #e2e8f0;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-    margin: 0.8rem 0;
-    background: #fff;
-">
-    <!-- Cabeçalho do relatório -->
-    <div style="padding: 16px 20px 12px; border-bottom: 2px solid #00c896;">
-        <div style="text-align:center;">
-            {'<p style="font-size:13px;font-weight:700;color:#005088;margin:0 0 2px;">' + instituicao + '</p>' if instituicao else ''}
-            <p style="font-size:15px;font-weight:700;color:#005088;margin:0 0 4px;letter-spacing:-0.01em;">
-                Verificação Independente de Unidades Monitor
-            </p>
-            <p style="font-size:11px;color:#718096;margin:0;">
-                Fator de Calibração: {dose_ref:.3f} cGy/UM &nbsp;|&nbsp; SAD: 100.0 cm
-            </p>
-        </div>
-    </div>
-
-    <!-- Info do paciente -->
-    <div style="padding: 10px 20px; font-size:12px; color:#4a5568; display:flex; gap:24px; flex-wrap:wrap; border-bottom:1px solid #f0f0f0;">
-        <span><b style="color:#2d3748;">Paciente:</b> {nome_paciente or 'N/A'}</span>
-        <span><b style="color:#2d3748;">ID:</b> {id_paciente or 'N/A'}</span>
-        <span><b style="color:#2d3748;">Plano:</b> {nome_plano or 'N/A'}</span>
-        <span><b style="color:#2d3748;">Data:</b> {data_calc.strftime('%d/%m/%Y')}</span>
-    </div>
-
-    <!-- Tabela transposta -->
-    <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-family:'DM Sans',system-ui,sans-serif;">
-            <thead><tr>{header_cells}</tr></thead>
-            <tbody>{rows_html}</tbody>
-        </table>
-    </div>
-
-    <!-- Rodapé -->
-    <div style="padding:12px 20px; border-top:1px solid #f0f0f0; display:flex; justify-content:space-around; color:#a0aec0; font-size:11px;">
-        <span>___________________________<br><span style="font-size:10px;">Físico Médico Responsável</span></span>
-        <span>___________________________<br><span style="font-size:10px;">Data da Revisão</span></span>
-    </div>
+# Footer
+preview_html.append("""
+<div class="footer">
+  <span>___________________________<br><small>Físico Médico Responsável</small></span>
+  <span>___________________________<br><small>Data da Revisão</small></span>
 </div>
-"""
+</div></body></html>""")
 
-st.markdown(preview_html, unsafe_allow_html=True)
+full_html = "\n".join(preview_html)
+
+# Calcular altura aproximada: header(80) + info(40) + rows(~26 cada) + footer(50) + margens
+preview_height = 80 + 40 + len(parametros_preview) * 26 + 50 + 40
+components.html(full_html, height=preview_height, scrolling=True)
+
 st.caption("Preview do relatório · O PDF oficial para impressão está no botão acima.")
